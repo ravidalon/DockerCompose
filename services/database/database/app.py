@@ -1,9 +1,37 @@
+import re
 from typing import Any
 from flask import Flask, request, jsonify
 from werkzeug.wrappers.response import Response as WerkzeugResponse
-from database.db import get_db, node_to_dict, relationship_to_dict
+from neo4j.exceptions import Neo4jError
+from database.db import get_db, node_to_dict, relationship_to_dict, close_db
 
 app = Flask(__name__)
+
+# Input validation regex for Neo4j identifiers (labels, relationship types)
+IDENTIFIER_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+def validate_identifier(value: str, name: str = "identifier") -> tuple[bool, str | None]:
+    """Validate Neo4j identifier (label or relationship type) to prevent injection"""
+    if not value:
+        return False, f"{name} cannot be empty"
+    if not IDENTIFIER_PATTERN.match(value):
+        return False, f"{name} must contain only alphanumeric characters and underscores, and start with a letter"
+    if len(value) > 65535:  # Neo4j max identifier length
+        return False, f"{name} is too long (max 65535 characters)"
+    return True, None
+
+def validate_identifiers(values: list[str], name: str = "identifiers") -> tuple[bool, str | None]:
+    """Validate multiple Neo4j identifiers"""
+    for value in values:
+        is_valid, error = validate_identifier(value, name)
+        if not is_valid:
+            return False, error
+    return True, None
+
+@app.teardown_appcontext
+def teardown_db(exception: Exception | None = None) -> None:
+    """Close database connection on application context teardown"""
+    close_db()
 
 # ============================================================================
 # NODE OPERATIONS
@@ -33,10 +61,15 @@ def create_node() -> tuple[WerkzeugResponse, int]:
     if not labels:
         return jsonify({"error": "At least one label is required"}), 400
 
+    # Validate labels to prevent Cypher injection
+    is_valid, error = validate_identifiers(labels, "label")
+    if not is_valid:
+        return jsonify({"error": error}), 400
+
     try:
         driver = get_db()
         with driver.session() as session:
-            # Build Cypher query dynamically
+            # Build Cypher query dynamically (safe after validation)
             labels_str = ':'.join(labels)
             query = f"CREATE (n:{labels_str} $properties) RETURN n"
             result = session.run(query, properties=properties)
@@ -47,8 +80,10 @@ def create_node() -> tuple[WerkzeugResponse, int]:
                 return jsonify(node_to_dict(node)), 201
 
             return jsonify({"error": "Failed to create node"}), 500
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/nodes/<node_id>', methods=['GET'])
 def get_node(node_id: str) -> tuple[WerkzeugResponse, int]:
@@ -65,8 +100,10 @@ def get_node(node_id: str) -> tuple[WerkzeugResponse, int]:
                 return jsonify(node_to_dict(node)), 200
 
             return jsonify({"error": "Node not found"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/nodes/<node_id>', methods=['PUT'])
 def update_node(node_id: str) -> tuple[WerkzeugResponse, int]:
@@ -103,8 +140,10 @@ def update_node(node_id: str) -> tuple[WerkzeugResponse, int]:
                 return jsonify(node_to_dict(node)), 200
 
             return jsonify({"error": "Node not found"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/nodes/<node_id>', methods=['DELETE'])
 def delete_node(node_id: str) -> tuple[WerkzeugResponse, int]:
@@ -124,12 +163,19 @@ def delete_node(node_id: str) -> tuple[WerkzeugResponse, int]:
                 return jsonify({"message": "Node deleted successfully"}), 200
 
             return jsonify({"error": "Node not found"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/nodes/label/<label>', methods=['GET'])
 def get_nodes_by_label(label: str) -> tuple[WerkzeugResponse, int]:
     """Get all nodes with a specific label"""
+    # Validate label to prevent Cypher injection
+    is_valid, error = validate_identifier(label, "label")
+    if not is_valid:
+        return jsonify({"error": error}), 400
+
     try:
         driver = get_db()
         with driver.session() as session:
@@ -138,8 +184,10 @@ def get_nodes_by_label(label: str) -> tuple[WerkzeugResponse, int]:
             nodes = [node_to_dict(record["n"]) for record in result]
 
             return jsonify({"nodes": nodes, "count": len(nodes)}), 200
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 # ============================================================================
 # RELATIONSHIP/EDGE OPERATIONS
@@ -172,6 +220,11 @@ def create_relationship() -> tuple[WerkzeugResponse, int]:
     if not from_node or not to_node or not rel_type:
         return jsonify({"error": "from_node, to_node, and type are required"}), 400
 
+    # Validate relationship type to prevent Cypher injection
+    is_valid, error = validate_identifier(rel_type, "relationship type")
+    if not is_valid:
+        return jsonify({"error": error}), 400
+
     try:
         driver = get_db()
         with driver.session() as session:
@@ -189,8 +242,10 @@ def create_relationship() -> tuple[WerkzeugResponse, int]:
                 return jsonify(relationship_to_dict(rel)), 201
 
             return jsonify({"error": "Failed to create relationship. Nodes may not exist."}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/relationships/<relationship_id>', methods=['GET'])
 def get_relationship(relationship_id: str) -> tuple[WerkzeugResponse, int]:
@@ -207,8 +262,10 @@ def get_relationship(relationship_id: str) -> tuple[WerkzeugResponse, int]:
                 return jsonify(relationship_to_dict(rel)), 200
 
             return jsonify({"error": "Relationship not found"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/relationships/<relationship_id>', methods=['PUT'])
 def update_relationship(relationship_id: str) -> tuple[WerkzeugResponse, int]:
@@ -244,8 +301,10 @@ def update_relationship(relationship_id: str) -> tuple[WerkzeugResponse, int]:
                 return jsonify(relationship_to_dict(rel)), 200
 
             return jsonify({"error": "Relationship not found"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/relationships/<relationship_id>', methods=['DELETE'])
 def delete_relationship(relationship_id: str) -> tuple[WerkzeugResponse, int]:
@@ -265,12 +324,19 @@ def delete_relationship(relationship_id: str) -> tuple[WerkzeugResponse, int]:
                 return jsonify({"message": "Relationship deleted successfully"}), 200
 
             return jsonify({"error": "Relationship not found"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/relationships/type/<rel_type>', methods=['GET'])
 def get_relationships_by_type(rel_type: str) -> tuple[WerkzeugResponse, int]:
     """Get all relationships of a specific type"""
+    # Validate relationship type to prevent Cypher injection
+    is_valid, error = validate_identifier(rel_type, "relationship type")
+    if not is_valid:
+        return jsonify({"error": error}), 400
+
     try:
         driver = get_db()
         with driver.session() as session:
@@ -279,8 +345,10 @@ def get_relationships_by_type(rel_type: str) -> tuple[WerkzeugResponse, int]:
             relationships = [relationship_to_dict(record["r"]) for record in result]
 
             return jsonify({"relationships": relationships, "count": len(relationships)}), 200
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/nodes/<node_id>/relationships', methods=['GET'])
 def get_node_relationships(node_id: str) -> tuple[WerkzeugResponse, int]:
@@ -292,6 +360,12 @@ def get_node_relationships(node_id: str) -> tuple[WerkzeugResponse, int]:
     """
     direction: str = request.args.get('direction', 'all')
     rel_type: str | None = request.args.get('type')
+
+    # Validate relationship type if provided
+    if rel_type:
+        is_valid, error = validate_identifier(rel_type, "relationship type")
+        if not is_valid:
+            return jsonify({"error": error}), 400
 
     try:
         driver = get_db()
@@ -316,8 +390,10 @@ def get_node_relationships(node_id: str) -> tuple[WerkzeugResponse, int]:
             relationships = [relationship_to_dict(record["r"]) for record in result]
 
             return jsonify({"relationships": relationships, "count": len(relationships)}), 200
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 # ============================================================================
 # QUERY OPERATIONS
@@ -363,8 +439,10 @@ def execute_cypher() -> tuple[WerkzeugResponse, int]:
                 records.append(record_dict)
 
             return jsonify({"results": records, "count": len(records)}), 200
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/query/path', methods=['POST'])
 def find_path() -> tuple[WerkzeugResponse, int]:
@@ -391,10 +469,20 @@ def find_path() -> tuple[WerkzeugResponse, int]:
     if not from_node or not to_node:
         return jsonify({"error": "from_node and to_node are required"}), 400
 
+    # Validate max_depth to prevent resource exhaustion
+    if not isinstance(max_depth, int) or max_depth < 1 or max_depth > 15:
+        return jsonify({"error": "max_depth must be an integer between 1 and 15"}), 400
+
+    # Validate relationship types if provided
+    if rel_types:
+        is_valid, error = validate_identifiers(rel_types, "relationship type")
+        if not is_valid:
+            return jsonify({"error": error}), 400
+
     try:
         driver = get_db()
         with driver.session() as session:
-            # Build relationship type filter
+            # Build relationship type filter (safe after validation)
             rel_filter = ""
             if rel_types:
                 rel_filter = ":" + "|".join(rel_types)
@@ -423,8 +511,10 @@ def find_path() -> tuple[WerkzeugResponse, int]:
                 }), 200
 
             return jsonify({"error": "No path found between the nodes"}), 404
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 # ============================================================================
 # UTILITY OPERATIONS
@@ -465,8 +555,10 @@ def get_stats() -> tuple[WerkzeugResponse, int]:
                     "relationship_types": rel_types
                 }
             }), 200
+    except Neo4jError as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
