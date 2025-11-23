@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  echo:
+    build: ./services/echo
+    ports:
+      - "8080:5000"
+    environment:
+      - FLASK_ENV=development
+    volumes:
+      - ./services/echo/echo:/app/echo
+
+  database:
+    build: ./services/database
+    ports:
+      - "8081:5000"
+    environment:
+      - FLASK_ENV=development
+    volumes:
+      - ./services/database/database:/app/database

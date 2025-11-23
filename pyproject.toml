@@ -1,0 +1,13 @@
+[project]
+name = "docker-compose-demo-dev"
+version = "0.1.0"
+description = "Dev environment for Docker Compose demo project"
+requires-python = ">=3.11"
+dependencies = [
+    "echo",
+    "database",
+]
+
+[tool.uv.sources]
+echo = { path = "services/echo" }
+database = { path = "services/database" }
