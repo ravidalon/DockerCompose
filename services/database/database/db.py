@@ -28,15 +28,6 @@ class Neo4jConnection:
             self._driver.close()
             self._driver = None
 
-    def verify_connectivity(self) -> bool:
-        """Verify connection to Neo4j"""
-        try:
-            driver: Driver = self.get_driver()
-            driver.verify_connectivity()
-            return True
-        except Exception:
-            return False
-
 
 # Global connection instance
 neo4j_conn: Neo4jConnection = Neo4jConnection()
@@ -45,6 +36,11 @@ neo4j_conn: Neo4jConnection = Neo4jConnection()
 def get_db() -> Driver:
     """Get the Neo4j driver instance"""
     return neo4j_conn.get_driver()
+
+
+def close_db() -> None:
+    """Close the Neo4j driver connection"""
+    neo4j_conn.close()
 
 
 def node_to_dict(node: Node) -> dict[str, Any]:
