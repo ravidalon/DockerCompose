@@ -5,6 +5,7 @@ description = "Database service for Docker Compose demo"
 requires-python = ">=3.11"
 dependencies = [
     "flask>=3.0.0",
+    "neo4j>=5.14.0",
 ]
 
 [build-system]
