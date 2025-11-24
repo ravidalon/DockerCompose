@@ -40,12 +40,21 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            First, check if this PR has already been reviewed by looking at existing comments using `gh pr view`.
+
+            If there are existing Claude Code review comments:
+            - Only review the NEW changes since the last review (use `gh pr diff` to see latest commits)
+            - Focus on incremental changes and whether previous feedback was addressed
+            - Reference the previous review in your new comment
+
+            If this is the FIRST review:
+            - Review the entire pull request comprehensively
+            - Provide feedback on:
+              - Code quality and best practices
+              - Potential bugs or issues
+              - Performance considerations
+              - Security concerns
+              - Test coverage
 
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
 
