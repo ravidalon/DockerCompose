@@ -1,19 +1,40 @@
 version: '3.8'
 
 services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"       # HTTP entrypoint
+      - "8080:8080"   # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+
   echo:
     build: ./services/echo
-    ports:
-      - "8080:5000"
     environment:
       - FLASK_ENV=development
     volumes:
       - ./services/echo/echo:/app/echo
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.echo.rule=PathPrefix(`/echo`)"
+      - "traefik.http.routers.echo.entrypoints=web"
+      - "traefik.http.routers.echo.middlewares=echo-stripprefix"
+      - "traefik.http.middlewares.echo-stripprefix.stripprefix.prefixes=/echo"
+      - "traefik.http.services.echo.loadbalancer.server.port=5000"
+    networks:
+      - default
 
   database:
     build: ./services/database
-    ports:
-      - "8081:5000"
     environment:
       - FLASK_ENV=development
       - NEO4J_URI=bolt://neo4j:7687
@@ -23,11 +44,12 @@ services:
       - ./services/database/database:/app/database
     depends_on:
       - neo4j
+    networks:
+      - default
+    # No Traefik labels - internal only
 
   fileshare:
     build: ./services/fileshare
-    ports:
-      - "8082:5000"
     environment:
       - FLASK_ENV=development
       - DATABASE_URL=http://database:5000
@@ -37,6 +59,15 @@ services:
       - fileshare_uploads:/app/uploads
     depends_on:
       - database
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.fileshare.rule=PathPrefix(`/fileshare`)"
+      - "traefik.http.routers.fileshare.entrypoints=web"
+      - "traefik.http.routers.fileshare.middlewares=fileshare-stripprefix"
+      - "traefik.http.middlewares.fileshare-stripprefix.stripprefix.prefixes=/fileshare"
+      - "traefik.http.services.fileshare.loadbalancer.server.port=5000"
+    networks:
+      - default
 
   neo4j:
     image: neo4j:5.14-community

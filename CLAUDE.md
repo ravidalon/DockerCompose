@@ -60,7 +60,11 @@ services/fileshare/fileshare/
 
 ### Docker Setup
 - Each service runs Flask on port 5000 internally
-- Mapped to host ports: echo (8080), database (8081), fileshare (8082)
+- **Traefik** reverse proxy routes external traffic:
+  - `/echo/*` → echo service (public)
+  - `/fileshare/*` → fileshare service (public)
+  - database service: internal only (no external access)
+- Traefik dashboard available at `http://localhost:8080`
 - Volume types demonstrated:
   - **Bind mounts** (code hot-reloading): `./services/{name}/{name}:/app/{name}`
   - **Named volumes** (persistent data): `neo4j_data`, `neo4j_logs`, `fileshare_uploads`
@@ -170,80 +174,88 @@ Demonstrates persistent volumes and service-to-service communication. Stores fil
 
 ## Testing Services
 
+All services are accessed through Traefik on port 80 with path-based routing:
+
 ```bash
-# Test echo service
-curl -X POST http://localhost:8080/echo \
+# Test echo service (accessible via Traefik)
+curl -X POST http://localhost/echo/echo \
   -H "Content-Type: application/json" \
   -d '{"message": "hello"}'
 
-# Test database service health
-curl http://localhost:8081/health
+# Echo health check
+curl http://localhost/echo/health
 
-# Create a node
-curl -X POST http://localhost:8081/nodes \
-  -H "Content-Type: application/json" \
-  -d '{"labels": ["Person"], "properties": {"name": "John"}}'
+# Database service (internal only - not accessible via Traefik)
+# Returns 404: curl http://localhost/database/health
 
-# Test fileshare service
+# Test fileshare service (accessible via Traefik)
 # Create a person
-curl -X POST http://localhost:8082/persons \
+curl -X POST http://localhost/fileshare/persons \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "email": "alice@example.com"}'
 
 # Try to create duplicate person (will fail with 409)
-curl -X POST http://localhost:8082/persons \
+curl -X POST http://localhost/fileshare/persons \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "email": "different@example.com"}'
 
 # Upload a file
 echo "Hello World" > test.txt
-curl -X POST http://localhost:8082/files/upload \
+curl -X POST http://localhost/fileshare/files/upload \
   -F "file=@test.txt" \
   -F "person=Alice"
 
 # Try to upload duplicate file (will fail with 409)
-curl -X POST http://localhost:8082/files/upload \
+curl -X POST http://localhost/fileshare/files/upload \
   -F "file=@test.txt" \
   -F "person=Alice"
 
 # Upload batch of files
 echo "File 1" > file1.txt
 echo "File 2" > file2.txt
-curl -X POST http://localhost:8082/files/upload/batch \
+curl -X POST http://localhost/fileshare/files/upload/batch \
   -F "files=@file1.txt" \
   -F "files=@file2.txt" \
   -F "person=Alice"
 
 # Download a file
-curl http://localhost:8082/files/Alice/test.txt/download -o downloaded.txt
+curl http://localhost/fileshare/files/Alice/test.txt/download -o downloaded.txt
 
 # Edit a file
 echo "Updated content" > updated.txt
-curl -X PUT http://localhost:8082/files/Alice/test.txt \
+curl -X PUT http://localhost/fileshare/files/Alice/test.txt \
   -F "file=@updated.txt"
 
 # Get file history
-curl http://localhost:8082/files/Alice/test.txt/history
+curl http://localhost/fileshare/files/Alice/test.txt/history
 
 # Get files uploaded in same batch
-curl http://localhost:8082/files/Alice/file1.txt/batch-related
+curl http://localhost/fileshare/files/Alice/file1.txt/batch-related
 
 # Get files uploaded by person
-curl http://localhost:8082/persons/Alice/files
+curl http://localhost/fileshare/persons/Alice/files
 
 # Delete a file
-curl -X DELETE http://localhost:8082/files/Alice/test.txt
+curl -X DELETE http://localhost/fileshare/files/Alice/test.txt
 
 # Try operations with non-existent person (will fail with 404)
-curl -X POST http://localhost:8082/files/upload \
+curl -X POST http://localhost/fileshare/files/upload \
   -F "file=@test.txt" \
   -F "person=Bob"
+
+# Access Traefik dashboard
+open http://localhost:8080
 ```
 
 ## Key Implementation Notes
 
+- **Traefik reverse proxy**: Path-based routing with automatic service discovery via Docker labels
+  - Public services (echo, fileshare) accessible via `/echo/*` and `/fileshare/*`
+  - Internal services (database, neo4j) not exposed externally
+  - Dashboard available at port 8080 for monitoring and debugging
 - **Database service**: Full Neo4j integration with proper validation and error handling
 - **File share service**: Demonstrates both persistent volumes (for uploads) and service-to-service HTTP communication (calls database service)
+- **Security**: Fileshare service uses parameterized queries to prevent Cypher injection, filename sanitization to prevent path traversal, and file type/size validation
 - All services use Flask's development mode with debug=True
 - Type hints are used throughout (Python 3.11+ style with `|` union syntax)
 - Volume mounts enable code changes without rebuilding containers
