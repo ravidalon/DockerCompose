@@ -1,6 +1,6 @@
 """Person management endpoints."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from ..db_client import call_database
 from ..person_utils import person_exists, get_person_by_name
@@ -27,7 +27,7 @@ def create_person():
         "properties": {
             "name": name,
             "email": data.get("email", ""),
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
     }
 
@@ -62,10 +62,13 @@ def get_person_files(person_name: str):
         return jsonify({"error": f"Person '{person_name}' not found"}), 404
 
     query_data = {
-        "query": f"""
-            MATCH (p:Person {{name: '{person_name}'}})-[:UPLOADED]->(f:File)
+        "query": """
+            MATCH (p:Person {name: $person_name})-[:UPLOADED]->(f:File)
             RETURN f
-        """
+        """,
+        "parameters": {
+            "person_name": person_name
+        }
     }
 
     result = call_database("POST", "query/cypher", query_data)

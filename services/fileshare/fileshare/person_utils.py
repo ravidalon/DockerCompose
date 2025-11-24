@@ -13,11 +13,14 @@ def get_person_by_name(name: str) -> dict | None:
         Person node dict if found, None otherwise
     """
     query_data = {
-        "query": f"""
-            MATCH (p:Person {{name: '{name}'}})
+        "query": """
+            MATCH (p:Person {name: $name})
             RETURN p
             LIMIT 1
-        """
+        """,
+        "parameters": {
+            "name": name
+        }
     }
 
     result = call_database("POST", "query/cypher", query_data)
@@ -53,11 +56,15 @@ def get_file_by_person_and_filename(person_name: str, filename: str) -> dict | N
         File node dict if found, None otherwise
     """
     query_data = {
-        "query": f"""
-            MATCH (p:Person {{name: '{person_name}'}})-[:UPLOADED]->(f:File {{filename: '{filename}'}})
+        "query": """
+            MATCH (p:Person {name: $person_name})-[:UPLOADED]->(f:File {filename: $filename})
             RETURN f
             LIMIT 1
-        """
+        """,
+        "parameters": {
+            "person_name": person_name,
+            "filename": filename
+        }
     }
 
     result = call_database("POST", "query/cypher", query_data)
