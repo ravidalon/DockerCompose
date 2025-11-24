@@ -6,8 +6,10 @@ requires-python = ">=3.11"
 dependencies = [
     "echo",
     "database",
+    "fileshare",
 ]
 
 [tool.uv.sources]
 echo = { path = "services/echo" }
 database = { path = "services/database" }
+fileshare = { path = "services/fileshare" }

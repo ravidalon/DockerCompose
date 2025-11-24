@@ -24,6 +24,20 @@ services:
     depends_on:
       - neo4j
 
+  fileshare:
+    build: ./services/fileshare
+    ports:
+      - "8082:5000"
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=http://database:5000
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - ./services/fileshare/fileshare:/app/fileshare
+      - fileshare_uploads:/app/uploads
+    depends_on:
+      - database
+
   neo4j:
     image: neo4j:5.14-community
     ports:
@@ -38,3 +52,4 @@ services:
 volumes:
   neo4j_data:
   neo4j_logs:
+  fileshare_uploads:
