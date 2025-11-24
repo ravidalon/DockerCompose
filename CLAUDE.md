@@ -247,6 +247,40 @@ curl -X POST http://localhost/fileshare/files/upload \
 open http://localhost:8080
 ```
 
+## Troubleshooting
+
+### Services return 404
+- **Check Traefik dashboard**: Visit http://localhost:8080 to see registered routes and service health
+- **Verify containers are running**: `docker compose ps` should show all services as "Up"
+- **Check Traefik logs**: `docker compose logs traefik` for routing errors
+- **Verify service labels**: Ensure Traefik labels are correctly set in docker-compose.yml
+
+### Gateway Timeout (504) errors
+- Services may still be starting up - wait 10-20 seconds
+- Check if backend service is healthy: `docker compose ps`
+- Check service logs: `docker compose logs -f <service_name>`
+- Verify service is listening on the correct port (5000)
+
+### Port conflicts
+If port 80 or 8080 is already in use:
+```bash
+# Check what's using the ports
+lsof -i :80
+lsof -i :8080
+
+# Stop conflicting services or change ports in docker-compose.yml
+```
+
+### Changes not reflected
+- **Code changes**: Should hot-reload automatically via bind mounts
+- **Docker Compose changes**: Restart services with `docker compose up -d`
+- **Traefik routing changes**: Traefik picks up label changes automatically
+
+### Database connection issues
+- Ensure Neo4j is fully started before other services
+- Check Neo4j logs: `docker compose logs neo4j`
+- Verify database service can reach Neo4j: `docker compose exec database curl http://neo4j:7474`
+
 ## Key Implementation Notes
 
 - **Traefik reverse proxy**: Path-based routing with automatic service discovery via Docker labels

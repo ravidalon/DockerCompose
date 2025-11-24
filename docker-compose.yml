@@ -1,19 +1,23 @@
-version: '3.8'
-
 services:
   traefik:
     image: traefik:v3.0
     command:
-      - "--api.insecure=true"
+      - "--api.insecure=true"  # Development only - use authentication in production
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
-      - "--log.level=INFO"
+      - "--log.level=DEBUG"  # DEBUG level for easier troubleshooting in development
+      - "--ping=true"  # Enable health check endpoint
     ports:
       - "80:80"       # HTTP entrypoint
       - "8080:8080"   # Traefik dashboard
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Read-only access
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - default
 
@@ -23,6 +27,9 @@ services:
       - FLASK_ENV=development
     volumes:
       - ./services/echo/echo:/app/echo
+    depends_on:
+      traefik:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.echo.rule=PathPrefix(`/echo`)"
@@ -58,7 +65,10 @@ services:
       - ./services/fileshare/fileshare:/app/fileshare
       - fileshare_uploads:/app/uploads
     depends_on:
-      - database
+      traefik:
+        condition: service_healthy
+      database:
+        condition: service_started
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.fileshare.rule=PathPrefix(`/fileshare`)"
@@ -84,3 +94,8 @@ volumes:
   neo4j_data:
   neo4j_logs:
   fileshare_uploads:
+
+networks:
+  default:
+    name: dockercompose_network
+    driver: bridge
