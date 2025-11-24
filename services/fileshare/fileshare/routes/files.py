@@ -1,6 +1,6 @@
 """File management endpoints."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, send_file
 from ..config import UPLOAD_DIR
 from ..db_client import call_database
@@ -9,6 +9,7 @@ from ..person_utils import (
     file_exists_for_person,
     get_file_by_person_and_filename
 )
+from ..validation import sanitize_filename, validate_file_upload, validate_content_type
 
 bp = Blueprint("files", __name__, url_prefix="/files")
 
@@ -66,7 +67,7 @@ def create_relationship(from_node_id: str, to_node_id: str, rel_type: str) -> No
         "to_node": to_node_id,
         "type": rel_type,
         "properties": {
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     }
     call_database("POST", "relationships", rel_data)
@@ -84,8 +85,20 @@ def upload_file():
     file = request.files["file"]
     person_name = request.form["person"]
 
-    if file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
+    # Validate file upload (size, empty file, etc.)
+    is_valid, error = validate_file_upload(file)
+    if not is_valid:
+        return error
+
+    # Sanitize filename to prevent path traversal
+    safe_filename, error = sanitize_filename(file.filename)
+    if error:
+        return error
+
+    # Validate content type
+    is_valid, error = validate_content_type(file.content_type)
+    if not is_valid:
+        return error
 
     # Validate person exists
     person_node, error = validate_person(person_name)
@@ -93,22 +106,25 @@ def upload_file():
         return error
 
     # Check if file already exists for this person
-    if file_exists_for_person(person_name, file.filename):
-        return jsonify({"error": f"File '{file.filename}' already exists for person '{person_name}'"}), 409
+    if file_exists_for_person(person_name, safe_filename):
+        return jsonify({"error": f"File '{safe_filename}' already exists for person '{person_name}'"}), 409
 
-    # Save file
-    file_path = UPLOAD_DIR / file.filename
-    file.save(file_path)
+    # Save file with sanitized filename
+    file_path = UPLOAD_DIR / safe_filename
+    try:
+        file.save(file_path)
+    except Exception as e:
+        return jsonify({"error": f"Failed to save file: {str(e)}"}), 500
 
     # Create file node
     file_data = {
         "labels": ["File"],
         "properties": {
-            "filename": file.filename,
+            "filename": safe_filename,
             "size": file_path.stat().st_size,
             "content_type": file.content_type or "application/octet-stream",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             "deleted": False
         }
     }
@@ -144,25 +160,50 @@ def upload_batch():
     person_element_id = person_node["id"]
     uploaded_files = []
     file_ids = []
+    seen_filenames = set()
 
     # Upload each file
     for file in files:
-        if file.filename == "":
-            continue
+        # Validate file upload
+        is_valid, error = validate_file_upload(file)
+        if not is_valid:
+            return error
 
-        # Save file
-        file_path = UPLOAD_DIR / file.filename
-        file.save(file_path)
+        # Sanitize filename to prevent path traversal
+        safe_filename, error = sanitize_filename(file.filename)
+        if error:
+            return error
+
+        # Validate content type
+        is_valid, error = validate_content_type(file.content_type)
+        if not is_valid:
+            return error
+
+        # Check for duplicate filenames within this batch
+        if safe_filename in seen_filenames:
+            return jsonify({"error": f"Duplicate filename in batch: '{safe_filename}'"}), 400
+        seen_filenames.add(safe_filename)
+
+        # Check if file already exists for this person
+        if file_exists_for_person(person_name, safe_filename):
+            return jsonify({"error": f"File '{safe_filename}' already exists for person '{person_name}'"}), 409
+
+        # Save file with sanitized filename
+        file_path = UPLOAD_DIR / safe_filename
+        try:
+            file.save(file_path)
+        except Exception as e:
+            return jsonify({"error": f"Failed to save file '{safe_filename}': {str(e)}"}), 500
 
         # Create file node
         file_data = {
             "labels": ["File"],
             "properties": {
-                "filename": file.filename,
+                "filename": safe_filename,
                 "size": file_path.stat().st_size,
                 "content_type": file.content_type or "application/octet-stream",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
                 "deleted": False
             }
         }
@@ -219,8 +260,13 @@ def list_files():
 @bp.route("/<person_name>/<filename>/download", methods=["GET"])
 def download_file(person_name: str, filename: str):
     """Download a file and track the download."""
+    # Sanitize filename to prevent path traversal
+    safe_filename, error = sanitize_filename(filename)
+    if error:
+        return error
+
     # Validate person and file exist
-    result, error = validate_person_and_file(person_name, filename)
+    result, error = validate_person_and_file(person_name, safe_filename)
     if error:
         return error
 
@@ -229,7 +275,7 @@ def download_file(person_name: str, filename: str):
     if file_node.get("properties", {}).get("deleted", False):
         return jsonify({"error": "File has been deleted"}), 404
 
-    file_path = UPLOAD_DIR / filename
+    file_path = UPLOAD_DIR / safe_filename
 
     if not file_path.exists():
         return jsonify({"error": "File not found on disk"}), 404
@@ -237,7 +283,7 @@ def download_file(person_name: str, filename: str):
     # Create DOWNLOADED relationship
     create_relationship(person_node["id"], file_node["id"], "DOWNLOADED")
 
-    return send_file(file_path, as_attachment=True, download_name=filename)
+    return send_file(file_path, as_attachment=True, download_name=safe_filename)
 
 
 @bp.route("/<person_name>/<filename>", methods=["PUT"])
@@ -248,11 +294,23 @@ def edit_file(person_name: str, filename: str):
 
     file = request.files["file"]
 
-    if file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
+    # Validate file upload
+    is_valid, error = validate_file_upload(file)
+    if not is_valid:
+        return error
+
+    # Sanitize filename to prevent path traversal
+    safe_filename, error = sanitize_filename(filename)
+    if error:
+        return error
+
+    # Validate content type
+    is_valid, error = validate_content_type(file.content_type)
+    if not is_valid:
+        return error
 
     # Validate person and file exist
-    result, error = validate_person_and_file(person_name, filename)
+    result, error = validate_person_and_file(person_name, safe_filename)
     if error:
         return error
 
@@ -262,15 +320,18 @@ def edit_file(person_name: str, filename: str):
         return jsonify({"error": "Cannot edit deleted file"}), 400
 
     # Save new file (use original filename)
-    file_path = UPLOAD_DIR / filename
-    file.save(file_path)
+    file_path = UPLOAD_DIR / safe_filename
+    try:
+        file.save(file_path)
+    except Exception as e:
+        return jsonify({"error": f"Failed to save file: {str(e)}"}), 500
 
     # Update file node
     file_id = file_node["id"]
     update_data = {
         "size": file_path.stat().st_size,
         "content_type": file.content_type or "application/octet-stream",
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }
 
     updated_node = call_database("PUT", f"nodes/{file_id}", update_data)
@@ -287,8 +348,13 @@ def edit_file(person_name: str, filename: str):
 @bp.route("/<person_name>/<filename>", methods=["DELETE"])
 def delete_file(person_name: str, filename: str):
     """Soft delete a file."""
+    # Sanitize filename to prevent path traversal
+    safe_filename, error = sanitize_filename(filename)
+    if error:
+        return error
+
     # Validate person and file exist
-    result, error = validate_person_and_file(person_name, filename)
+    result, error = validate_person_and_file(person_name, safe_filename)
     if error:
         return error
 
@@ -297,17 +363,20 @@ def delete_file(person_name: str, filename: str):
     if file_node.get("properties", {}).get("deleted", False):
         return jsonify({"error": "File already deleted"}), 400
 
-    file_path = UPLOAD_DIR / filename
+    file_path = UPLOAD_DIR / safe_filename
     file_id = file_node["id"]
 
     # Delete physical file
     if file_path.exists():
-        file_path.unlink()
+        try:
+            file_path.unlink()
+        except Exception as e:
+            return jsonify({"error": f"Failed to delete physical file: {str(e)}"}), 500
 
     # Update node with deleted flag
     update_data = {
         "deleted": True,
-        "deleted_at": datetime.utcnow().isoformat()
+        "deleted_at": datetime.now(timezone.utc).isoformat()
     }
 
     updated_node = call_database("PUT", f"nodes/{file_id}", update_data)
@@ -321,8 +390,13 @@ def delete_file(person_name: str, filename: str):
 @bp.route("/<person_name>/<filename>/history", methods=["GET"])
 def get_file_history(person_name: str, filename: str):
     """Get all interactions with a file."""
+    # Sanitize filename to prevent path traversal
+    safe_filename, error = sanitize_filename(filename)
+    if error:
+        return error
+
     # Validate person and file exist
-    result, error = validate_person_and_file(person_name, filename)
+    result, error = validate_person_and_file(person_name, safe_filename)
     if error:
         return error
 
@@ -333,7 +407,7 @@ def get_file_history(person_name: str, filename: str):
 
     return jsonify({
         "person": person_name,
-        "filename": filename,
+        "filename": safe_filename,
         "relationships": result.get("relationships", [])
     })
 
@@ -341,8 +415,13 @@ def get_file_history(person_name: str, filename: str):
 @bp.route("/<person_name>/<filename>/batch-related", methods=["GET"])
 def get_batch_related(person_name: str, filename: str):
     """Get files uploaded in the same batch."""
+    # Sanitize filename to prevent path traversal
+    safe_filename, error = sanitize_filename(filename)
+    if error:
+        return error
+
     # Validate person and file exist
-    result, error = validate_person_and_file(person_name, filename)
+    result, error = validate_person_and_file(person_name, safe_filename)
     if error:
         return error
 
@@ -350,11 +429,14 @@ def get_batch_related(person_name: str, filename: str):
     file_id = file_node["id"]
 
     query_data = {
-        "query": f"""
+        "query": """
             MATCH (f1:File)-[:UPLOADED_WITH]-(f2:File)
-            WHERE elementId(f1) = '{file_id}'
+            WHERE elementId(f1) = $file_id
             RETURN f2
-        """
+        """,
+        "parameters": {
+            "file_id": file_id
+        }
     }
 
     result = call_database("POST", "query/cypher", query_data)
@@ -366,6 +448,6 @@ def get_batch_related(person_name: str, filename: str):
 
     return jsonify({
         "person": person_name,
-        "filename": filename,
+        "filename": safe_filename,
         "related_files": related_files
     })
