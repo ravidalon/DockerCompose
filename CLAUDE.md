@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Docker Compose microservices demo project with two Python Flask services:
 - `echo`: Simple echo service that returns JSON data sent to it
-- `database`: Graph database API service with stub endpoints for Neo4j-style operations (nodes, relationships, queries)
+- `database`: Graph database API service with full Neo4j integration for nodes, relationships, and queries
 
 ## Architecture
 
@@ -16,9 +16,24 @@ Each service follows this pattern:
 services/{service_name}/
 ├── Dockerfile
 ├── pyproject.toml
+├── uv.lock
 ├── {service_name}/
 │   ├── __init__.py
 │   └── app.py
+```
+
+The database service has additional modular structure:
+```
+services/database/database/
+├── app.py           # Application factory and entry point
+├── db.py            # Neo4j database connection management
+├── validation.py    # Input validation to prevent injection attacks
+└── routes/
+    ├── __init__.py
+    ├── nodes.py         # Node CRUD operations
+    ├── relationships.py # Relationship CRUD operations
+    ├── queries.py       # Cypher queries and path finding
+    └── utils.py         # Health check and statistics
 ```
 
 ### Dependency Management
@@ -77,7 +92,7 @@ docker compose up --build echo
 - `GET /health`: Health check endpoint
 
 ### Database Service (Port 8081)
-All endpoints return 501 status - they are stubs for future Neo4j implementation:
+Fully implemented Neo4j graph database API with the following endpoints:
 
 **Node Operations:**
 - `POST /nodes`: Create node with labels and properties
@@ -113,7 +128,7 @@ curl -X POST http://localhost:8080/echo \
 # Test database service health
 curl http://localhost:8081/health
 
-# Test stub endpoint (returns 501)
+# Create a node
 curl -X POST http://localhost:8081/nodes \
   -H "Content-Type: application/json" \
   -d '{"labels": ["Person"], "properties": {"name": "John"}}'
@@ -121,7 +136,8 @@ curl -X POST http://localhost:8081/nodes \
 
 ## Key Implementation Notes
 
-- Database service endpoints are intentionally stubbed with 501 responses and TODO comments - they require Neo4j integration
+- Database service has full Neo4j integration with proper validation and error handling
 - Both services use Flask's development mode with debug=True
-- Type hints are used in database service (Python 3.11+ style with `|` union syntax)
+- Type hints are used throughout (Python 3.11+ style with `|` union syntax)
 - Volume mounts enable code changes without rebuilding containers
+- Database service uses modular architecture with separate route modules for nodes, relationships, queries, and utilities
