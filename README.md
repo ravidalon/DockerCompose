@@ -55,6 +55,16 @@ docker compose up -d
 
 # Stop all services
 docker compose down
+
+# View logs for all services
+docker compose logs -f
+
+# View logs for specific service
+docker compose logs -f echo
+docker compose logs -f database
+
+# Rebuild a specific service
+docker compose up --build echo
 ```
 
 ### Local Development
