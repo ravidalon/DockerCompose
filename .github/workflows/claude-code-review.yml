@@ -3,25 +3,13 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
 
@@ -40,27 +28,103 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            First, check if this PR has already been reviewed by looking at existing comments using `gh pr view`.
+            You are conducting a MANDATORY code review that will determine if this PR can be merged.
 
-            If there are existing Claude Code review comments:
-            - Only review the NEW changes since the last review (use `gh pr diff` to see latest commits)
-            - Focus on incremental changes and whether previous feedback was addressed
-            - Reference the previous review in your new comment
+            **Context:** This is a demo project showcasing Docker Compose microservices with Vue 3 frontend,
+            so standards should be appropriate for a demo/educational repository (not production-critical).
 
-            If this is the FIRST review:
-            - Review the entire pull request comprehensively
-            - Provide feedback on:
-              - Code quality and best practices
-              - Potential bugs or issues
-              - Performance considerations
-              - Security concerns
-              - Test coverage
+            ## Review Process:
 
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            1. Check if this PR has already been reviewed by looking at existing comments using `gh pr view`.
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+            2. If there are existing Claude Code review comments:
+               - Only review the NEW changes since the last review (use `gh pr diff`)
+               - Focus on whether previous HIGH PRIORITY feedback was addressed
+               - Determine if remaining issues are acceptable for a demo project
 
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://docs.claude.com/en/docs/claude-code/cli-reference for available options
-          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+            3. If this is the FIRST review:
+               - Review the entire pull request comprehensively
+               - Categorize issues as: HIGH, MEDIUM, or LOW priority
+               - Consider demo project context when prioritizing
 
+            ## Merge Criteria:
+
+            ✅ **PASS (Approve for merge)** if:
+            - No HIGH priority issues (security vulnerabilities, critical bugs, data loss risks)
+            - Code follows repository conventions (see CLAUDE.md)
+            - Changes work as intended for demo purposes
+            - Any MEDIUM/LOW issues are acceptable for a demo project
+
+            ❌ **FAIL (Block merge)** if:
+            - HIGH priority security issues exist
+            - Critical bugs that break core functionality
+            - Code quality is severely below standards
+            - Previous HIGH priority feedback was not addressed
+
+            ## Your Tasks:
+
+            1. Conduct the code review and post your findings as a comment using `gh pr comment`
+
+            2. At the END of your review comment, add a clear verdict section:
+
+            For PASS:
+            ```
+            ## ✅ Verdict: APPROVED FOR MERGE
+
+            This PR meets the quality standards for a demo project and has no blocking issues.
+            ```
+
+            For FAIL:
+            ```
+            ## ❌ Verdict: CHANGES REQUIRED
+
+            This PR has blocking issues that must be addressed before merge:
+            - [List HIGH priority issues that must be fixed]
+            ```
+
+            3. After posting your comment, create a file named `/tmp/review_result.txt` containing ONLY one word:
+               - Write "PASS" if PR is approved
+               - Write "FAIL" if PR has blocking issues
+
+            Use your Bash tool to create this file:
+            ```bash
+            echo "PASS" > /tmp/review_result.txt   # or "FAIL"
+            ```
+
+          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(echo:*)"'
+
+      - name: Check Review Result
+        id: check-result
+        run: |
+          if [ -f /tmp/review_result.txt ]; then
+            RESULT=$(cat /tmp/review_result.txt | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+            echo "result=$RESULT" >> $GITHUB_OUTPUT
+
+            if [ "$RESULT" = "PASS" ]; then
+              echo "✅ Claude Code Review: APPROVED"
+              exit 0
+            elif [ "$RESULT" = "FAIL" ]; then
+              echo "❌ Claude Code Review: CHANGES REQUIRED"
+              echo "::error::Code review found blocking issues. Please address the feedback and push new commits."
+              exit 1
+            else
+              echo "⚠️  Invalid review result: $RESULT"
+              echo "::error::Review result must be either PASS or FAIL"
+              exit 1
+            fi
+          else
+            echo "::error::Review result file not found. Claude Code Review may have failed."
+            exit 1
+          fi
+
+      - name: Post Status Comment
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ **Claude Code Review Failed**\n\nThis PR has blocking issues that must be addressed before it can be merged. Please review the feedback above and push fixes.'
+            })
