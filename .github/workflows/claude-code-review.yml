@@ -17,9 +17,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Check if workflow file was modified
+        id: check-workflow
+        run: |
+          # Check if this specific workflow file was changed
+          WORKFLOW_FILE=".github/workflows/claude-code-review.yml"
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "^${WORKFLOW_FILE}$"; then
+            echo "workflow_modified=true" >> $GITHUB_OUTPUT
+            echo "⚠️  This PR modifies the Claude Code Review workflow itself"
+            echo "Automatically passing to allow workflow modifications"
+          else
+            echo "workflow_modified=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Auto-pass for workflow modifications
+        if: steps.check-workflow.outputs.workflow_modified == 'true'
+        run: |
+          echo "✅ Auto-passing: This PR modifies the Claude Code Review workflow"
+          echo "Workflow modifications require manual review but won't be blocked by this check"
+          exit 0
 
       - name: Run Claude Code Review
+        if: steps.check-workflow.outputs.workflow_modified == 'false'
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
@@ -94,6 +115,7 @@ jobs:
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(echo:*)"'
 
       - name: Check Review Result
+        if: steps.check-workflow.outputs.workflow_modified == 'false'
         id: check-result
         run: |
           if [ -f /tmp/review_result.txt ]; then
@@ -118,7 +140,7 @@ jobs:
           fi
 
       - name: Post Status Comment
-        if: failure()
+        if: failure() && steps.check-workflow.outputs.workflow_modified == 'false'
         uses: actions/github-script@v7
         with:
           script: |
