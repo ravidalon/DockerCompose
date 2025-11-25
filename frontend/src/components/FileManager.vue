@@ -82,7 +82,7 @@
             >
               Edit
             </button>
-            <button class="secondary" @click="handleDelete(file.filename)" :disabled="deleting">
+            <button class="secondary" @click="handleDelete(file.filename)" :disabled="deletingFiles.has(file.filename)">
               Delete
             </button>
           </div>
@@ -152,11 +152,12 @@ const selectedFile = ref(null)
 const selectedDownloadFile = ref('')
 const uploading = ref(false)
 const downloading = ref(false)
-const deleting = ref(false)
+const deletingFiles = ref(new Set())
 const editing = ref(false)
 const saving = ref(false)
 const editingFile = ref(null)
 const fileContent = ref('')
+const originalContentType = ref('')
 const message = ref({ text: '', type: '' })
 const fileInput = ref(null)
 
@@ -164,8 +165,14 @@ const fileInput = ref(null)
 const activeFiles = computed(() => files.value.filter(f => !f.deleted))
 const deletedFiles = computed(() => files.value.filter(f => f.deleted))
 
-// Check if file is a text file based on content type
+// Max file size for editing (1MB)
+const MAX_EDIT_SIZE = 1024 * 1024
+
+// Check if file is a text file based on content type and size
 const isTextFile = (file) => {
+  // Security: Only allow editing files under 1MB
+  if (file.size > MAX_EDIT_SIZE) return false
+
   const textTypes = [
     'text/',
     'application/json',
@@ -179,6 +186,8 @@ const isTextFile = (file) => {
 
 const loadFiles = async () => {
   loadingFiles.value = true
+  message.value = { text: '', type: '' }
+
   try {
     const response = await fetch(`${API_BASE}/persons/${encodeURIComponent(props.user.name)}/files`)
     if (response.ok) {
@@ -192,9 +201,17 @@ const loadFiles = async () => {
       }))
     } else {
       console.error('Failed to load files')
+      message.value = {
+        text: 'Failed to load files. Please refresh the page.',
+        type: 'error'
+      }
     }
   } catch (error) {
     console.error('Error loading files:', error)
+    message.value = {
+      text: 'Network error while loading files. Please check your connection.',
+      type: 'error'
+    }
   } finally {
     loadingFiles.value = false
   }
@@ -268,8 +285,12 @@ const handleDownload = async () => {
       a.download = selectedDownloadFile.value
       document.body.appendChild(a)
       a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
+
+      // Delay cleanup to ensure download starts
+      setTimeout(() => {
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      }, 100)
 
       message.value = {
         text: `Successfully downloaded ${selectedDownloadFile.value}`,
@@ -296,9 +317,12 @@ const handleDownload = async () => {
 }
 
 const handleDelete = async (filename) => {
+  // Prevent deleting the same file multiple times
+  if (deletingFiles.value.has(filename)) return
+
   if (!confirm(`Are you sure you want to delete ${filename}?`)) return
 
-  deleting.value = true
+  deletingFiles.value.add(filename)
   message.value = { text: '', type: '' }
 
   try {
@@ -329,7 +353,7 @@ const handleDelete = async (filename) => {
       type: 'error'
     }
   } finally {
-    deleting.value = false
+    deletingFiles.value.delete(filename)
   }
 }
 
@@ -338,6 +362,12 @@ const handleEdit = async (filename) => {
   message.value = { text: '', type: '' }
 
   try {
+    // Find the file to get its content type
+    const file = activeFiles.value.find(f => f.filename === filename)
+    if (file) {
+      originalContentType.value = file.content_type
+    }
+
     const response = await fetch(
       `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(filename)}/download`
     )
@@ -371,9 +401,10 @@ const saveEdit = async () => {
   message.value = { text: '', type: '' }
 
   try {
-    // Create a Blob from the text content
-    const blob = new Blob([fileContent.value], { type: 'text/plain' })
-    const file = new File([blob], editingFile.value, { type: 'text/plain' })
+    // Create a Blob from the text content, preserving original content type
+    const contentType = originalContentType.value || 'text/plain'
+    const blob = new Blob([fileContent.value], { type: contentType })
+    const file = new File([blob], editingFile.value, { type: contentType })
 
     const formData = new FormData()
     formData.append('file', file)
@@ -414,6 +445,7 @@ const saveEdit = async () => {
 const closeEditor = () => {
   editingFile.value = null
   fileContent.value = ''
+  originalContentType.value = ''
 }
 
 const formatSize = (bytes) => {
