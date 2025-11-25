@@ -73,9 +73,19 @@
             <span>{{ file.filename }}</span>
             <small>{{ formatSize(file.size) }}</small>
           </div>
-          <button class="secondary" @click="handleDelete(file.filename)" :disabled="deleting">
-            Delete
-          </button>
+          <div class="file-actions">
+            <button
+              v-if="isTextFile(file)"
+              @click="handleEdit(file.filename)"
+              :disabled="editing"
+              class="edit-btn"
+            >
+              Edit
+            </button>
+            <button class="secondary" @click="handleDelete(file.filename)" :disabled="deleting">
+              Delete
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -91,6 +101,31 @@
             <small>{{ formatSize(file.size) }}</small>
             <small class="deleted-label">Deleted</small>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div v-if="editingFile" class="modal-overlay" @click="closeEditor">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h2>Edit {{ editingFile }}</h2>
+          <button class="close-btn" @click="closeEditor">&times;</button>
+        </div>
+        <div class="modal-body">
+          <textarea
+            v-model="fileContent"
+            class="file-editor"
+            :disabled="saving"
+          ></textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="secondary" @click="closeEditor" :disabled="saving">
+            Cancel
+          </button>
+          <button @click="saveEdit" :disabled="saving">
+            {{ saving ? 'Saving...' : 'Save' }}
+          </button>
         </div>
       </div>
     </div>
@@ -118,12 +153,29 @@ const selectedDownloadFile = ref('')
 const uploading = ref(false)
 const downloading = ref(false)
 const deleting = ref(false)
+const editing = ref(false)
+const saving = ref(false)
+const editingFile = ref(null)
+const fileContent = ref('')
 const message = ref({ text: '', type: '' })
 const fileInput = ref(null)
 
 // Separate active and deleted files
 const activeFiles = computed(() => files.value.filter(f => !f.deleted))
 const deletedFiles = computed(() => files.value.filter(f => f.deleted))
+
+// Check if file is a text file based on content type
+const isTextFile = (file) => {
+  const textTypes = [
+    'text/',
+    'application/json',
+    'application/javascript',
+    'application/xml',
+    'application/x-sh',
+    'application/x-yaml'
+  ]
+  return textTypes.some(type => file.content_type?.startsWith(type))
+}
 
 const loadFiles = async () => {
   loadingFiles.value = true
@@ -279,6 +331,89 @@ const handleDelete = async (filename) => {
   } finally {
     deleting.value = false
   }
+}
+
+const handleEdit = async (filename) => {
+  editing.value = true
+  message.value = { text: '', type: '' }
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(filename)}/download`
+    )
+
+    if (response.ok) {
+      const text = await response.text()
+      fileContent.value = text
+      editingFile.value = filename
+    } else {
+      const error = await response.json()
+      message.value = {
+        text: error.error || 'Failed to load file',
+        type: 'error'
+      }
+    }
+  } catch (error) {
+    console.error('Edit error:', error)
+    message.value = {
+      text: 'Failed to load file. Please try again.',
+      type: 'error'
+    }
+  } finally {
+    editing.value = false
+  }
+}
+
+const saveEdit = async () => {
+  if (!editingFile.value) return
+
+  saving.value = true
+  message.value = { text: '', type: '' }
+
+  try {
+    // Create a Blob from the text content
+    const blob = new Blob([fileContent.value], { type: 'text/plain' })
+    const file = new File([blob], editingFile.value, { type: 'text/plain' })
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch(
+      `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(editingFile.value)}`,
+      {
+        method: 'PUT',
+        body: formData,
+      }
+    )
+
+    if (response.ok) {
+      message.value = {
+        text: `Successfully saved ${editingFile.value}`,
+        type: 'success'
+      }
+      closeEditor()
+      await loadFiles()
+    } else {
+      const error = await response.json()
+      message.value = {
+        text: error.error || 'Save failed',
+        type: 'error'
+      }
+    }
+  } catch (error) {
+    console.error('Save error:', error)
+    message.value = {
+      text: 'Save failed. Please try again.',
+      type: 'error'
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+const closeEditor = () => {
+  editingFile.value = null
+  fileContent.value = ''
 }
 
 const formatSize = (bytes) => {
