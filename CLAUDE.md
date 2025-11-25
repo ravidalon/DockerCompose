@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Docker Compose microservices demo project with three Python Flask services:
+This is a Docker Compose microservices demo project with three Python Flask backend services and a Vue.js frontend:
 - `echo`: Simple echo service that returns JSON data sent to it
 - `database`: Graph database API service with full Neo4j integration for nodes, relationships, and queries
 - `fileshare`: File storage service with graph-based tracking of uploads, downloads, and edits
+- `frontend`: Vue 3 + Vite SPA for user-friendly file management interface
 
 ## Architecture
 
@@ -49,36 +50,59 @@ services/fileshare/fileshare/
     └── files.py     # File operations (upload, download, edit, delete)
 ```
 
+The frontend is a Vue 3 SPA:
+```
+frontend/
+├── Dockerfile       # Multi-stage build: Node.js build + nginx serve
+├── nginx.conf       # nginx config with SPA routing and API proxying
+├── package.json     # Vue 3 and Vite dependencies
+├── vite.config.js   # Vite configuration
+├── index.html       # Entry HTML
+└── src/
+    ├── main.js          # App entry point
+    ├── App.vue          # Root component
+    ├── style.css        # Global styles
+    └── components/
+        ├── LoginView.vue    # User login/registration
+        └── FileManager.vue  # File upload/download UI
+```
+
 ### Dependency Management
-- Uses `uv` for Python dependency management
-- Root `pyproject.toml` defines workspace with all services as path dependencies
-- Each service has its own `pyproject.toml` with service-specific dependencies
-  - echo: Flask
-  - database: Flask, neo4j driver
-  - fileshare: Flask, requests (for calling database service)
-- Services share the same Python environment for local development
+- **Backend**: Uses `uv` for Python dependency management
+  - Root `pyproject.toml` defines workspace with all services as path dependencies
+  - Each service has its own `pyproject.toml` with service-specific dependencies
+    - echo: Flask
+    - database: Flask, neo4j driver
+    - fileshare: Flask, requests (for calling database service)
+  - Services share the same Python environment for local development
+- **Frontend**: Uses npm for JavaScript dependency management
+  - Vue 3 for reactive UI components
+  - Vite for fast development and optimized production builds
 
 ### Docker Setup
-- Each service runs Flask on port 5000 internally
+- **Backend services** run Flask on port 5000 internally
+- **Frontend** runs nginx on port 80 internally, built with multi-stage Docker build
 - **Traefik** reverse proxy routes external traffic:
+  - `/` → frontend (Vue SPA - lowest priority)
   - `/echo/*` → echo service (public)
-  - `/fileshare/*` → fileshare service (public)
+  - `/fileshare/*` → fileshare service (public, proxied by frontend nginx and Traefik)
   - database service: internal only (no external access)
 - Traefik dashboard available at `http://localhost:8080`
 - Volume types demonstrated:
   - **Bind mounts** (code hot-reloading): `./services/{name}/{name}:/app/{name}`
   - **Named volumes** (persistent data): `neo4j_data`, `neo4j_logs`, `fileshare_uploads`
-- All services use Python 3.11-slim base image with `uv` package manager
-- Service dependencies: fileshare depends on database, database depends on neo4j
+- Backend services use Python 3.11-slim base image with `uv` package manager
+- Frontend uses Node.js 20 for build, nginx:alpine for serving
+- Service dependencies: frontend depends on fileshare, fileshare depends on database, database depends on neo4j
 
 ## Development Commands
 
 ### Local Development
 ```bash
-# Install dependencies for all services
+# Backend: Install dependencies for all services
 uv sync
 
-# Run a specific service locally (from service directory)
+# Run a specific backend service locally (from service directory)
 cd services/echo
 python -m echo.app
 
@@ -87,6 +111,11 @@ python -m database.app
 
 cd services/fileshare
 python -m fileshare.app
+
+# Frontend: Install dependencies and run dev server
+cd frontend
+npm install
+npm run dev  # Runs on http://localhost:5173
 ```
 
 ### Docker Operations
@@ -107,14 +136,42 @@ docker compose logs -f
 docker compose logs -f echo
 docker compose logs -f database
 docker compose logs -f fileshare
+docker compose logs -f frontend
 
 # Rebuild a specific service
 docker compose up --build fileshare
+docker compose up --build frontend
 ```
 
 ## Service Details
 
-### Echo Service (Port 8080)
+### Frontend (Port 80 via Traefik)
+A Vue 3 single-page application providing a user-friendly interface for file management.
+
+**Features:**
+- Simple name-based authentication (no actual auth, creates/fetches person from database)
+- File upload with visual feedback
+- File download via dropdown selection
+- File list display with size formatting
+- File deletion with confirmation
+- Responsive design with modern UI
+
+**Tech Stack:**
+- Vue 3 Composition API with `<script setup>`
+- Vite for development and build
+- nginx for production serving
+- API requests proxied to fileshare service
+
+**User Flow:**
+1. Enter name (and optionally email) on login screen
+2. System checks if person exists, creates if not
+3. Main interface shows:
+   - User info with logout button
+   - Upload section with file picker
+   - Download section with dropdown of user's files
+   - List of all user's files with delete buttons
+
+### Echo Service
 - `POST /echo`: Returns the JSON body sent to it
 - `GET /health`: Health check endpoint
 
@@ -174,7 +231,28 @@ Demonstrates persistent volumes and service-to-service communication. Stores fil
 
 ## Testing Services
 
-All services are accessed through Traefik on port 80 with path-based routing:
+### Frontend Web UI
+The easiest way to test the application is through the web interface:
+
+```bash
+# Start all services
+docker compose up --build
+
+# Access the frontend in your browser
+open http://localhost
+
+# Or on specific port if configured differently
+# open http://localhost:4200
+```
+
+The web UI provides:
+- Name-based login (no password required)
+- Visual file upload with drag-and-drop
+- Dropdown list of your files for download
+- File management (view, download, delete)
+
+### API Testing
+All backend services are accessed through Traefik on port 80 with path-based routing:
 
 ```bash
 # Test echo service (accessible via Traefik)

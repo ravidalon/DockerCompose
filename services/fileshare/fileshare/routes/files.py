@@ -329,9 +329,11 @@ def edit_file(person_name: str, filename: str):
     # Update file node
     file_id = file_node["id"]
     update_data = {
-        "size": file_path.stat().st_size,
-        "content_type": file.content_type or "application/octet-stream",
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "properties": {
+            "size": file_path.stat().st_size,
+            "content_type": file.content_type or "application/octet-stream",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
     }
 
     updated_node = call_database("PUT", f"nodes/{file_id}", update_data)
@@ -375,8 +377,10 @@ def delete_file(person_name: str, filename: str):
 
     # Update node with deleted flag
     update_data = {
-        "deleted": True,
-        "deleted_at": datetime.now(timezone.utc).isoformat()
+        "properties": {
+            "deleted": True,
+            "deleted_at": datetime.now(timezone.utc).isoformat()
+        }
     }
 
     updated_node = call_database("PUT", f"nodes/{file_id}", update_data)

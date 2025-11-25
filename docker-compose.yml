@@ -79,6 +79,22 @@ services:
     networks:
       - default
 
+  frontend:
+    build: ./frontend
+    depends_on:
+      traefik:
+        condition: service_healthy
+      fileshare:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+    networks:
+      - default
+
   neo4j:
     image: neo4j:5.14-community
     ports:
