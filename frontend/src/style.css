@@ -277,3 +277,129 @@ button:disabled {
   background: #f8d7da;
   border-radius: 4px;
 }
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-btn {
+  background: #28a745;
+}
+
+.edit-btn:hover {
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+}
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  padding: 24px;
+  border-bottom: 2px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: #333;
+  font-size: 24px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 36px;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s, color 0.2s;
+}
+
+.close-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+  transform: none;
+  box-shadow: none;
+}
+
+.modal-body {
+  padding: 24px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.file-editor {
+  width: 100%;
+  height: 400px;
+  padding: 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color 0.3s;
+}
+
+.file-editor:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.file-editor:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.modal-footer {
+  padding: 24px;
+  border-top: 2px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
