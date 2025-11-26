@@ -95,6 +95,49 @@ frontend/
 - Frontend uses Node.js 20 for build, nginx:alpine for serving
 - Service dependencies: frontend depends on fileshare, fileshare depends on database, database depends on neo4j
 
+### Advanced Docker Compose Features
+
+#### Extension Fields (DRY Configuration)
+The compose file uses extension fields to reduce duplication:
+- **`x-flask-service`**: Common Flask service configuration (healthcheck, restart policy, FLASK_ENV)
+- **`x-common-profiles`**: Shared profile definitions for dev, backend-only, and test
+
+Services inherit these using YAML anchors (`<<: *flask-service`), making the configuration more maintainable.
+
+#### Health Checks & Smart Dependencies
+All services include health checks to ensure they're truly ready before dependent services start:
+- **Traefik**: Uses built-in `traefik healthcheck --ping` command
+- **Flask services** (echo, database, fileshare): `curl -f http://localhost:5000/health`
+- **Frontend**: `curl -f http://localhost/` (nginx health)
+- **Neo4j**: `wget --spider http://localhost:7474` with 30s start period
+
+Dependencies use `condition: service_healthy` instead of `service_started`, ensuring:
+- Neo4j is fully initialized before database service starts
+- Database service is ready before fileshare makes API calls
+- All backend services are healthy before tests run
+
+This eliminates startup race conditions and connection errors.
+
+#### Network Isolation (Security Best Practice)
+Services are isolated using three separate Docker networks:
+
+**Frontend Network** (`dockercompose_frontend`):
+- Public-facing layer accessible via Traefik
+- Services: traefik, echo, fileshare, frontend
+
+**Backend Network** (`dockercompose_backend`):
+- Internal API communication layer
+- Services: fileshare, database
+
+**Database Network** (`dockercompose_database`):
+- Most isolated layer - only database service can reach Neo4j
+- Services: database, neo4j
+
+This architecture provides defense-in-depth:
+- Neo4j is never exposed to public-facing services
+- Each service only has access to networks it needs
+- Compromised frontend cannot directly access database layer
+
 ## Development Commands
 
 ### Environment Configuration
@@ -457,9 +500,13 @@ lsof -i :8080
   - Public services (echo, fileshare) accessible via `/echo/*` and `/fileshare/*`
   - Internal services (database, neo4j) not exposed externally
   - Dashboard available at port 8080 for monitoring and debugging
+- **Health checks & smart dependencies**: All services have health checks, dependencies use `condition: service_healthy` to eliminate startup race conditions
+- **Network isolation**: Three-layer network architecture (frontend, backend, database) provides defense-in-depth security
+- **Extension fields**: YAML anchors reduce duplication for common Flask service configuration and profile definitions
 - **Database service**: Full Neo4j integration with proper validation and error handling
 - **File share service**: Demonstrates both persistent volumes (for uploads) and service-to-service HTTP communication (calls database service)
-- **Security**: Fileshare service uses parameterized queries to prevent Cypher injection, filename sanitization to prevent path traversal, and file type/size validation
+- **Security**: Fileshare service uses parameterized queries to prevent Cypher injection, filename sanitization to prevent path traversal, and file type/size validation; network isolation limits blast radius
+- **Restart policies**: All services use `restart: unless-stopped` for production-like resilience
 - All services use Flask's development mode with debug=True
 - Type hints are used throughout (Python 3.11+ style with `|` union syntax)
 - Volume mounts enable code changes without rebuilding containers
