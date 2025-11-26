@@ -1,0 +1,89 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create .env file for tests
+        run: cp default.env .env
+
+      - name: Run integration tests
+        id: run-tests
+        run: |
+          # Run tests and capture output
+          set +e  # Don't exit on failure
+          docker compose --env-file default.env --profile test up --build --exit-code-from tests tests > test-output.log 2>&1
+          TEST_EXIT_CODE=$?
+          set -e
+
+          # Save exit code for later steps
+          echo "exit_code=$TEST_EXIT_CODE" >> $GITHUB_OUTPUT
+
+          # Display test output
+          cat test-output.log
+
+          # Exit with test exit code
+          exit $TEST_EXIT_CODE
+
+      - name: Parse test failures
+        if: failure() && steps.run-tests.outputs.exit_code != '0'
+        id: parse-failures
+        run: |
+          # Extract failed test names from output
+          echo "## ❌ Integration Tests Failed" > failure-summary.md
+          echo "" >> failure-summary.md
+
+          if grep -q "FAILED" test-output.log; then
+            echo "### Failed Tests:" >> failure-summary.md
+            grep "FAILED" test-output.log | sed 's/^/- /' >> failure-summary.md
+            echo "" >> failure-summary.md
+          fi
+
+          if grep -q "ERROR" test-output.log; then
+            echo "### Errors:" >> failure-summary.md
+            grep "ERROR" test-output.log | sed 's/^/- /' >> failure-summary.md
+            echo "" >> failure-summary.md
+          fi
+
+          # Add summary section
+          echo "### Summary:" >> failure-summary.md
+          if grep -q "failed" test-output.log; then
+            grep -E "[0-9]+ failed" test-output.log | tail -1 >> failure-summary.md
+          fi
+
+          echo "" >> failure-summary.md
+          echo "Please fix the failing tests and push new commits." >> failure-summary.md
+
+          # Save for comment
+          cat failure-summary.md
+          echo "HAS_FAILURES=true" >> $GITHUB_OUTPUT
+
+      - name: Post failure comment
+        if: failure() && steps.parse-failures.outputs.HAS_FAILURES == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const failureSummary = fs.readFileSync('failure-summary.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: failureSummary
+            });
+
+      - name: Clean up
+        if: always()
+        run: docker compose --profile test down -v
