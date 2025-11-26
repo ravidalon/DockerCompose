@@ -47,22 +47,26 @@ jobs:
           echo "## ❌ Integration Tests Failed" > failure-summary.md
           echo "" >> failure-summary.md
 
-          if grep -q "FAILED" test-output.log; then
+          # Extract failed test names
+          if grep -q "FAILED test_" test-output.log; then
             echo "### Failed Tests:" >> failure-summary.md
-            grep "FAILED" test-output.log | sed 's/^/- /' >> failure-summary.md
             echo "" >> failure-summary.md
-          fi
 
-          if grep -q "ERROR" test-output.log; then
-            echo "### Errors:" >> failure-summary.md
-            grep "ERROR" test-output.log | sed 's/^/- /' >> failure-summary.md
+            # Get test names from short summary
+            grep "^tests-[0-9]*  | FAILED test_" test-output.log | \
+              sed 's/^tests-[0-9]*  | FAILED //' | \
+              sed 's/ - .*//' | \
+              while IFS= read -r testname; do
+                echo "- \`$testname\`" >> failure-summary.md
+              done
+
             echo "" >> failure-summary.md
           fi
 
           # Add summary section
           echo "### Summary:" >> failure-summary.md
           if grep -q "failed" test-output.log; then
-            grep -E "[0-9]+ failed" test-output.log | tail -1 >> failure-summary.md
+            grep -E "=+ [0-9]+ failed" test-output.log | tail -1 | sed 's/^tests-[0-9]*  | //' >> failure-summary.md
           fi
 
           echo "" >> failure-summary.md
