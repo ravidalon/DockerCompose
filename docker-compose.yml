@@ -42,6 +42,7 @@ services:
     profiles:
       - dev
       - backend-only
+      - test
 
   database:
     build: ./services/database
@@ -59,6 +60,7 @@ services:
     profiles:
       - dev
       - backend-only
+      - test
     # No Traefik labels - internal only
 
   fileshare:
@@ -87,6 +89,7 @@ services:
     profiles:
       - dev
       - backend-only
+      - test
 
   frontend:
     build: ./frontend
@@ -119,6 +122,29 @@ services:
     profiles:
       - dev
       - backend-only
+      - test
+
+  tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    environment:
+      - FILESHARE_URL=http://fileshare:5000
+      - DATABASE_URL=http://database:5000
+      - NEO4J_URI=bolt://neo4j:${NEO4J_BOLT_PORT:-7687}
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
+    depends_on:
+      fileshare:
+        condition: service_started
+      database:
+        condition: service_started
+      neo4j:
+        condition: service_started
+    networks:
+      - default
+    profiles:
+      - test
 
 volumes:
   neo4j_data:
