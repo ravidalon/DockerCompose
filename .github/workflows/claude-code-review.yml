@@ -103,14 +103,7 @@ jobs:
             - [List HIGH priority issues that must be fixed]
             ```
 
-            3. After posting your comment, create a file named `/tmp/review_result.txt` containing ONLY one word:
-               - Write "PASS" if PR is approved
-               - Write "FAIL" if PR has blocking issues
-
-            Use your Bash tool to create this file:
-            ```bash
-            echo "PASS" > /tmp/review_result.txt   # or "FAIL"
-            ```
+            The workflow will automatically parse your verdict from the comment.
 
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(echo:*)"'
 
@@ -118,24 +111,21 @@ jobs:
         if: steps.check-workflow.outputs.workflow_modified == 'false'
         id: check-result
         run: |
-          if [ -f /tmp/review_result.txt ]; then
-            RESULT=$(cat /tmp/review_result.txt | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
-            echo "result=$RESULT" >> $GITHUB_OUTPUT
+          echo "Fetching latest Claude review comment..."
+          COMMENT=$(gh pr view ${{ github.event.pull_request.number }} --json comments --jq '.comments[] | select(.author.login == "claude") | .body' | tail -1)
 
-            if [ "$RESULT" = "PASS" ]; then
-              echo "✅ Claude Code Review: APPROVED"
-              exit 0
-            elif [ "$RESULT" = "FAIL" ]; then
-              echo "❌ Claude Code Review: CHANGES REQUIRED"
-              echo "::error::Code review found blocking issues. Please address the feedback and push new commits."
-              exit 1
-            else
-              echo "⚠️  Invalid review result: $RESULT"
-              echo "::error::Review result must be either PASS or FAIL"
-              exit 1
-            fi
+          if echo "$COMMENT" | grep -iq "Verdict:.*APPROVED FOR MERGE"; then
+            echo "✅ Claude Code Review: APPROVED"
+            echo "result=PASS" >> $GITHUB_OUTPUT
+            exit 0
+          elif echo "$COMMENT" | grep -iq "Verdict:.*CHANGES REQUIRED"; then
+            echo "❌ Claude Code Review: CHANGES REQUIRED"
+            echo "result=FAIL" >> $GITHUB_OUTPUT
+            echo "::error::Code review found blocking issues. Please address the feedback and push new commits."
+            exit 1
           else
-            echo "::error::Review result file not found. Claude Code Review may have failed."
+            echo "::error::Could not find valid verdict in Claude's comment"
+            echo "::error::Expected either 'Verdict: APPROVED FOR MERGE' or 'Verdict: CHANGES REQUIRED'"
             exit 1
           fi
 
