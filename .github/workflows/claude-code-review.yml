@@ -112,9 +112,10 @@ jobs:
         id: check-result
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "Fetching latest Claude review comment..."
-          COMMENT=$(gh pr view ${{ github.event.pull_request.number }} --json comments --jq -r '[.comments[] | select(.author.login == "claude")] | last | .body')
+          COMMENT=$(gh pr view "$PR_NUMBER" --json comments | jq -r '[.comments[] | select(.author.login == "claude")] | last | .body')
 
           if echo "$COMMENT" | grep -iq "Verdict:.*APPROVED FOR MERGE"; then
             echo "✅ Claude Code Review: APPROVED"
