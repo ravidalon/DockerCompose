@@ -1,3 +1,21 @@
+# Extension fields - reusable configuration blocks
+x-flask-service: &flask-service
+  environment:
+    - FLASK_ENV=${FLASK_ENV:-development}
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+  restart: unless-stopped
+
+x-common-profiles: &common-profiles
+  profiles:
+    - dev
+    - backend-only
+    - test
+
 services:
   traefik:
     image: traefik:v3.0
@@ -18,13 +36,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 10s
+    restart: unless-stopped
     networks:
-      - default
+      - frontend_network
 
   echo:
+    <<: [*flask-service, *common-profiles]  # Inherits healthcheck, restart policy, FLASK_ENV, and profiles
     build: ./services/echo
-    environment:
-      - FLASK_ENV=${FLASK_ENV:-development}
     volumes:
       - ./services/echo/echo:/app/echo
     depends_on:
@@ -38,13 +57,10 @@ services:
       - "traefik.http.middlewares.echo-stripprefix.stripprefix.prefixes=/echo"
       - "traefik.http.services.echo.loadbalancer.server.port=5000"
     networks:
-      - default
-    profiles:
-      - dev
-      - backend-only
-      - test
+      - frontend_network  # Public-facing, accessible via Traefik
 
   database:
+    <<: [*flask-service, *common-profiles]  # Inherits healthcheck, restart policy, FLASK_ENV, and profiles
     build: ./services/database
     environment:
       - FLASK_ENV=${FLASK_ENV:-development}
@@ -54,16 +70,15 @@ services:
     volumes:
       - ./services/database/database:/app/database
     depends_on:
-      - neo4j
+      neo4j:
+        condition: service_healthy  # Wait for Neo4j to be healthy
     networks:
-      - default
-    profiles:
-      - dev
-      - backend-only
-      - test
+      - backend_network   # Accessible to fileshare
+      - database_network  # Can reach Neo4j
     # No Traefik labels - internal only
 
   fileshare:
+    <<: [*flask-service, *common-profiles]  # Inherits healthcheck, restart policy, FLASK_ENV, and profiles
     build: ./services/fileshare
     environment:
       - FLASK_ENV=${FLASK_ENV:-development}
@@ -76,7 +91,7 @@ services:
       traefik:
         condition: service_healthy
       database:
-        condition: service_started
+        condition: service_healthy  # Wait for database to be healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.fileshare.rule=PathPrefix(`/fileshare`)"
@@ -85,19 +100,23 @@ services:
       - "traefik.http.middlewares.fileshare-stripprefix.stripprefix.prefixes=/fileshare"
       - "traefik.http.services.fileshare.loadbalancer.server.port=5000"
     networks:
-      - default
-    profiles:
-      - dev
-      - backend-only
-      - test
+      - frontend_network  # Public-facing, accessible via Traefik
+      - backend_network   # Can reach database service
 
   frontend:
     build: ./frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
     depends_on:
       traefik:
         condition: service_healthy
       fileshare:
-        condition: service_started
+        condition: service_healthy  # Wait for fileshare to be healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
@@ -105,11 +124,12 @@ services:
       - "traefik.http.routers.frontend.priority=1"
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
     networks:
-      - default
+      - frontend_network  # Public-facing, accessible via Traefik
     profiles:
       - dev
 
   neo4j:
+    <<: *common-profiles  # Inherits profile definitions
     image: neo4j:5.14-community
     ports:
       - "${NEO4J_HTTP_PORT:-7474}:7474"  # HTTP
@@ -119,10 +139,15 @@ services:
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
-    profiles:
-      - dev
-      - backend-only
-      - test
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s  # Neo4j needs more time to start
+    restart: unless-stopped
+    networks:
+      - database_network  # Most isolated - only database service can reach it
 
   tests:
     build:
@@ -136,13 +161,14 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
     depends_on:
       fileshare:
-        condition: service_started
+        condition: service_healthy  # Wait for fileshare to be healthy
       database:
-        condition: service_started
+        condition: service_healthy  # Wait for database to be healthy
       neo4j:
-        condition: service_started
+        condition: service_healthy  # Wait for Neo4j to be healthy
     networks:
-      - default
+      - backend_network   # Can reach fileshare and database
+      - database_network  # Can reach Neo4j for direct queries
     profiles:
       - test
 
@@ -152,6 +178,17 @@ volumes:
   fileshare_uploads:
 
 networks:
-  default:
-    name: dockercompose_network
+  # Frontend network - public-facing services accessible via Traefik
+  frontend_network:
+    name: dockercompose_frontend
+    driver: bridge
+
+  # Backend network - internal API communication between fileshare and database
+  backend_network:
+    name: dockercompose_backend
+    driver: bridge
+
+  # Database network - most isolated, only database service can reach Neo4j
+  database_network:
+    name: dockercompose_database
     driver: bridge
