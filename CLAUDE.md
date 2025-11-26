@@ -133,6 +133,10 @@ Services are organized into profiles for different use cases:
   - Includes: traefik, echo, database, fileshare, neo4j
   - Use for: API testing, backend development
 
+- **`test`**: Backend services with integration test runner
+  - Includes: traefik, echo, database, fileshare, neo4j, tests
+  - Use for: Running integration tests in Docker
+
 ### Local Development
 ```bash
 # Backend: Install dependencies for all services
@@ -184,6 +188,52 @@ docker compose logs -f frontend
 docker compose --env-file default.env --profile dev up --build fileshare
 docker compose --env-file default.env --profile dev up --build frontend
 ```
+
+### Running Tests
+
+The project includes integration tests that verify the fileshare service correctly updates the Neo4j database.
+
+**Test Coverage:**
+- Person creation in database
+- File upload (creates File node and UPLOADED relationship)
+- File download (creates DOWNLOADED relationship)
+- File edit (creates EDITED relationship)
+- Batch file upload (creates UPLOADED_WITH relationships)
+
+**Run tests using Docker Compose:**
+```bash
+# Run tests with the test profile
+docker compose --env-file default.env --profile test up --build tests
+
+# Run tests and exit (recommended for CI)
+docker compose --env-file default.env --profile test up --build --exit-code-from tests tests
+
+# Clean up after tests
+docker compose --profile test down
+```
+
+**Run tests locally:**
+```bash
+# Install test dependencies
+cd tests
+uv sync
+
+# Run tests
+uv run pytest -v
+
+# Run specific test
+uv run pytest test_integration.py::test_person_creation_in_database -v
+
+# Go back to root
+cd ..
+```
+
+**Test Service Details:**
+- Uses pytest for test framework
+- Makes HTTP requests to fileshare API
+- Queries Neo4j directly to verify database state
+- Automatically cleans up test data after each test
+- Runs in isolated Docker container with access to all backend services
 
 ## Service Details
 
