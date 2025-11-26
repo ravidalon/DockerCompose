@@ -97,6 +97,42 @@ frontend/
 
 ## Development Commands
 
+### Environment Configuration
+
+The project uses environment files to configure services:
+
+- **`default.env`**: Default configuration values (committed to repo)
+- **`example.env`**: Template showing all available variables (committed to repo)
+- **`.env`**: Optional local overrides (not committed, takes precedence)
+
+To use custom configuration:
+```bash
+# Copy example and customize
+cp example.env .env
+# Edit .env with your values
+```
+
+Available environment variables:
+- `NEO4J_USER`, `NEO4J_PASSWORD`: Neo4j credentials
+- `NEO4J_HTTP_PORT`, `NEO4J_BOLT_PORT`: Neo4j port mappings
+- `FLASK_ENV`: Flask environment mode
+- `TRAEFIK_HTTP_PORT`, `TRAEFIK_DASHBOARD_PORT`: Traefik port mappings
+- `TRAEFIK_LOG_LEVEL`: Traefik logging verbosity
+- `UPLOAD_DIR`: File upload directory path
+- `COMPOSE_PROJECT_NAME`: Docker Compose project name
+
+### Docker Compose Profiles
+
+Services are organized into profiles for different use cases:
+
+- **`dev`** (default): Full stack including frontend
+  - Includes: traefik, echo, database, fileshare, frontend, neo4j
+  - Use for: Local development with web UI
+
+- **`backend-only`**: Backend services without frontend
+  - Includes: traefik, echo, database, fileshare, neo4j
+  - Use for: API testing, backend development
+
 ### Local Development
 ```bash
 # Backend: Install dependencies for all services
@@ -120,11 +156,17 @@ npm run dev  # Runs on http://localhost:5173
 
 ### Docker Operations
 ```bash
-# Build and start all services
-docker compose up --build
+# Build and start all services (uses 'dev' profile by default)
+docker compose --env-file default.env --profile dev up --build
+
+# Start with backend only (no frontend)
+docker compose --env-file default.env --profile backend-only up --build
+
+# Use custom environment file
+docker compose --env-file .env --profile dev up --build
 
 # Start services in detached mode
-docker compose up -d
+docker compose --env-file default.env --profile dev up -d
 
 # Stop all services
 docker compose down
@@ -139,8 +181,8 @@ docker compose logs -f fileshare
 docker compose logs -f frontend
 
 # Rebuild a specific service
-docker compose up --build fileshare
-docker compose up --build frontend
+docker compose --env-file default.env --profile dev up --build fileshare
+docker compose --env-file default.env --profile dev up --build frontend
 ```
 
 ## Service Details
