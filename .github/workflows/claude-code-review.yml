@@ -110,6 +110,8 @@ jobs:
       - name: Check Review Result
         if: steps.check-workflow.outputs.workflow_modified == 'false'
         id: check-result
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "Fetching latest Claude review comment..."
           COMMENT=$(gh pr view ${{ github.event.pull_request.number }} --json comments --jq '.comments[] | select(.author.login == "claude") | .body' | tail -1)
