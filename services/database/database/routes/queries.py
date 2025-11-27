@@ -1,10 +1,13 @@
 """Query operation routes (Cypher execution, path finding, node relationships)"""
+import logging
 from typing import Any
 from flask import Blueprint, request, jsonify
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 from neo4j.exceptions import Neo4jError
 from database.db import get_db, node_to_dict, relationship_to_dict
 from database.validation import validate_identifier, validate_identifiers
+
+logger = logging.getLogger(__name__)
 
 
 queries_bp = Blueprint('queries', __name__)
@@ -51,8 +54,10 @@ def get_node_relationships(node_id: str) -> tuple[WerkzeugResponse, int]:
 
             return jsonify({"relationships": relationships, "count": len(relationships)}), 200
     except Neo4jError as e:
+        logger.error(f"Neo4j error getting node relationships: {str(e)}", exc_info=True)
         return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
+        logger.error(f"Unexpected error getting node relationships: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -97,8 +102,10 @@ def execute_cypher() -> tuple[WerkzeugResponse, int]:
 
             return jsonify({"results": records, "count": len(records)}), 200
     except Neo4jError as e:
+        logger.error(f"Neo4j error executing Cypher query: {str(e)}", exc_info=True)
         return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
+        logger.error(f"Unexpected error executing Cypher query: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -170,6 +177,8 @@ def find_path() -> tuple[WerkzeugResponse, int]:
 
             return jsonify({"error": "No path found between the nodes"}), 404
     except Neo4jError as e:
+        logger.error(f"Neo4j error finding path: {str(e)}", exc_info=True)
         return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
+        logger.error(f"Unexpected error finding path: {str(e)}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500

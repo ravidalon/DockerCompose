@@ -18,7 +18,11 @@ class Neo4jConnection:
         if self._driver is None:
             self._driver = GraphDatabase.driver(
                 self._uri,
-                auth=(self._user, self._password)
+                auth=(self._user, self._password),
+                max_connection_lifetime=3600,  # Close connections after 1 hour
+                max_connection_pool_size=50,
+                connection_timeout=30,
+                keep_alive=True
             )
         return self._driver
 
