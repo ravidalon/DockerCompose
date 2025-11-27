@@ -1,5 +1,6 @@
 """File management endpoints."""
 
+import logging
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, send_file
 from ..config import UPLOAD_DIR
@@ -11,6 +12,7 @@ from ..person_utils import (
 )
 from ..validation import sanitize_filename, validate_file_upload, validate_content_type
 
+logger = logging.getLogger(__name__)
 bp = Blueprint("files", __name__, url_prefix="/files")
 
 
@@ -260,30 +262,50 @@ def list_files():
 @bp.route("/<person_name>/<filename>/download", methods=["GET"])
 def download_file(person_name: str, filename: str):
     """Download a file and track the download."""
-    # Sanitize filename to prevent path traversal
-    safe_filename, error = sanitize_filename(filename)
-    if error:
-        return error
+    logger.info(f"Download request: person={person_name}, filename={filename}")
 
-    # Validate person and file exist
-    result, error = validate_person_and_file(person_name, safe_filename)
-    if error:
-        return error
+    try:
+        # Sanitize filename to prevent path traversal
+        logger.debug(f"Sanitizing filename: {filename}")
+        safe_filename, error = sanitize_filename(filename)
+        if error:
+            logger.warning(f"Filename sanitization failed: {filename}")
+            return error
 
-    person_node, file_node = result
+        # Validate person and file exist
+        logger.debug(f"Validating person and file: {person_name}/{safe_filename}")
+        result, error = validate_person_and_file(person_name, safe_filename)
+        if error:
+            logger.warning(f"Validation failed for {person_name}/{safe_filename}")
+            return error
 
-    if file_node.get("properties", {}).get("deleted", False):
-        return jsonify({"error": "File has been deleted"}), 404
+        person_node, file_node = result
+        logger.debug(f"Found person_node: {person_node.get('id')}, file_node: {file_node.get('id')}")
 
-    file_path = UPLOAD_DIR / safe_filename
+        if file_node.get("properties", {}).get("deleted", False):
+            logger.warning(f"Attempted to download deleted file: {person_name}/{safe_filename}")
+            return jsonify({"error": "File has been deleted"}), 404
 
-    if not file_path.exists():
-        return jsonify({"error": "File not found on disk"}), 404
+        file_path = UPLOAD_DIR / safe_filename
+        logger.debug(f"Checking file path: {file_path}")
 
-    # Create DOWNLOADED relationship
-    create_relationship(person_node["id"], file_node["id"], "DOWNLOADED")
+        if not file_path.exists():
+            logger.error(f"File not found on disk: {file_path} (but exists in database)")
+            return jsonify({"error": "File not found on disk"}), 404
 
-    return send_file(file_path, as_attachment=True, download_name=safe_filename)
+        # Create DOWNLOADED relationship
+        logger.debug(f"Creating DOWNLOADED relationship: {person_node['id']} -> {file_node['id']}")
+        create_relationship(person_node["id"], file_node["id"], "DOWNLOADED")
+
+        logger.info(f"Sending file: {safe_filename}")
+        return send_file(file_path, as_attachment=True, download_name=safe_filename)
+
+    except Exception as e:
+        logger.error(f"Unexpected error in download_file: {e}", exc_info=True)
+        return jsonify({
+            "error": "Internal server error during file download",
+            "message": str(e)
+        }), 500
 
 
 @bp.route("/<person_name>/<filename>", methods=["PUT"])
