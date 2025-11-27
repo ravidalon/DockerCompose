@@ -26,18 +26,37 @@ jobs:
         run: |
           # Run tests and capture output
           set +e  # Don't exit on failure
-          docker compose --env-file default.env --profile test up --build --exit-code-from tests tests > test-output.log 2>&1
-          TEST_EXIT_CODE=$?
+          docker compose --env-file default.env --profile test up --build --exit-code-from tests tests 2>&1 | tee test-output.log
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
           # Save exit code for later steps
           echo "exit_code=$TEST_EXIT_CODE" >> $GITHUB_OUTPUT
 
-          # Display test output
-          cat test-output.log
-
           # Exit with test exit code
           exit $TEST_EXIT_CODE
+
+      - name: Capture service logs
+        if: always()
+        run: |
+          # Capture logs from all services
+          mkdir -p logs
+          docker compose --profile test logs --no-color > logs/all-services.log 2>&1 || true
+          docker compose --profile test logs --no-color fileshare > logs/fileshare.log 2>&1 || true
+          docker compose --profile test logs --no-color database > logs/database.log 2>&1 || true
+          docker compose --profile test logs --no-color neo4j > logs/neo4j.log 2>&1 || true
+          docker compose --profile test logs --no-color tests > logs/tests.log 2>&1 || true
+
+          # Copy test output
+          cp test-output.log logs/ 2>&1 || true
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: logs/
+          retention-days: 7
 
       - name: Parse test failures
         if: failure() && steps.run-tests.outputs.exit_code != '0'
