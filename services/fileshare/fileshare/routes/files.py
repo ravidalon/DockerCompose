@@ -63,7 +63,12 @@ def create_relationship(from_node_id: str, to_node_id: str, rel_type: str) -> No
         from_node_id: Source node element ID
         to_node_id: Target node element ID
         rel_type: Relationship type (e.g., "UPLOADED", "DOWNLOADED", "EDITED")
+
+    Raises:
+        RuntimeError: If relationship creation fails
     """
+    logger.debug(f"Creating {rel_type} relationship: {from_node_id} -> {to_node_id}")
+
     rel_data = {
         "from_node": from_node_id,
         "to_node": to_node_id,
@@ -72,7 +77,13 @@ def create_relationship(from_node_id: str, to_node_id: str, rel_type: str) -> No
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     }
-    call_database("POST", "relationships", rel_data)
+
+    try:
+        result = call_database("POST", "relationships", rel_data)
+        logger.debug(f"Relationship created successfully: {result}")
+    except RuntimeError as e:
+        logger.error(f"Failed to create {rel_type} relationship: {e}")
+        raise
 
 
 @bp.route("/upload", methods=["POST"])
@@ -281,6 +292,15 @@ def download_file(person_name: str, filename: str):
 
         person_node, file_node = result
         logger.debug(f"Found person_node: {person_node.get('id')}, file_node: {file_node.get('id')}")
+
+        # Validate that nodes have required ID field
+        if not person_node.get("id"):
+            logger.error(f"Person node missing ID field: {person_node}")
+            return jsonify({"error": "Invalid person data from database"}), 500
+
+        if not file_node.get("id"):
+            logger.error(f"File node missing ID field: {file_node}")
+            return jsonify({"error": "Invalid file data from database"}), 500
 
         if file_node.get("properties", {}).get("deleted", False):
             logger.warning(f"Attempted to download deleted file: {person_name}/{safe_filename}")

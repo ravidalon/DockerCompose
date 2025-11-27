@@ -1,4 +1,5 @@
 """Relationship CRUD operation routes"""
+import logging
 from typing import Any
 from flask import Blueprint, request, jsonify
 from werkzeug.wrappers.response import Response as WerkzeugResponse
@@ -6,7 +7,7 @@ from neo4j.exceptions import Neo4jError
 from database.db import get_db, relationship_to_dict
 from database.validation import validate_identifier
 
-
+logger = logging.getLogger(__name__)
 relationships_bp = Blueprint('relationships', __name__, url_prefix='/relationships')
 
 
@@ -60,9 +61,11 @@ def create_relationship() -> tuple[WerkzeugResponse, int]:
 
             return jsonify({"error": "Failed to create relationship. Nodes may not exist."}), 404
     except Neo4jError as e:
+        logger.error(f"Neo4j error creating relationship: {e}", exc_info=True)
         return jsonify({"error": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"error": "Internal server error"}), 500
+        logger.error(f"Unexpected error creating relationship: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error", "message": str(e)}), 500
 
 
 @relationships_bp.route('/<relationship_id>', methods=['GET'])
