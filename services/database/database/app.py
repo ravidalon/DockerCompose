@@ -1,4 +1,5 @@
 """Flask application entry point for Neo4j graph database API"""
+import atexit
 import logging
 import sys
 from flask import Flask, jsonify
@@ -37,17 +38,14 @@ def create_app() -> Flask:
         logger.error(f"Unhandled exception: {error}", exc_info=True)
         return jsonify({"error": "Internal server error", "type": type(error).__name__}), 500
 
-    # Register teardown handler
-    @app.teardown_appcontext
-    def teardown_db(exception: Exception | None = None) -> None:
-        """Close database connection on application context teardown"""
-        close_db()
-
     return app
 
 
 # Create application instance
 app = create_app()
+
+# Register cleanup on application shutdown
+atexit.register(close_db)
 
 
 if __name__ == '__main__':
