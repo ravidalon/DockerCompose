@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
+from werkzeug.wrappers.response import Response as WerkzeugResponse
 
 app = Flask(__name__)
 
+
 @app.route('/echo', methods=['POST'])
-def echo():
+def echo() -> tuple[WerkzeugResponse, int]:
     """Echo endpoint that returns the data sent to it"""
     data = request.get_json()
 
@@ -12,8 +14,9 @@ def echo():
 
     return jsonify(data), 200
 
+
 @app.route('/health', methods=['GET'])
-def health():
+def health() -> tuple[WerkzeugResponse, int]:
     """Health check endpoint"""
     return jsonify({"status": "healthy"}), 200
 

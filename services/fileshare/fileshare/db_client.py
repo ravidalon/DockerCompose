@@ -1,26 +1,14 @@
-"""Database service client."""
-
 import logging
+
 import requests
+
 from .config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
 
 def call_database(method: str, endpoint: str, json: dict | None = None) -> dict:
-    """Make a request to the database service.
-
-    Args:
-        method: HTTP method (GET, POST, PUT, DELETE)
-        endpoint: API endpoint path (without leading slash)
-        json: Optional JSON payload
-
-    Returns:
-        Response JSON as dictionary
-
-    Raises:
-        RuntimeError: If database service request fails
-    """
+    """Make HTTP request to database service with timeout and error handling"""
     url = f"{DATABASE_URL}/{endpoint}"
     logger.debug(f"Database request: {method} {url}")
     if json:

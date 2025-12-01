@@ -22,7 +22,6 @@ jobs:
       - name: Check if workflow file was modified
         id: check-workflow
         run: |
-          # Check if this specific workflow file was changed
           WORKFLOW_FILE=".github/workflows/claude-code-review.yml"
           if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "^${WORKFLOW_FILE}$"; then
             echo "workflow_modified=true" >> $GITHUB_OUTPUT
@@ -105,15 +104,17 @@ jobs:
 
             The workflow will automatically parse your verdict from the comment.
 
+          # Restrict Claude to safe read-only gh commands for security
           claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(echo:*)"'
 
-      - name: Check Review Result
+      - name: Check review result
         if: steps.check-workflow.outputs.workflow_modified == 'false'
         id: check-result
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          # Parse verdict from Claude's comment to determine pass/fail
           echo "Fetching latest Claude review comment..."
           COMMENT=$(gh pr view "$PR_NUMBER" --json comments | jq -r '[.comments[] | select(.author.login == "claude")] | last | .body')
 
@@ -132,7 +133,7 @@ jobs:
             exit 1
           fi
 
-      - name: Post Status Comment
+      - name: Post status comment
         if: failure() && steps.check-workflow.outputs.workflow_modified == 'false'
         uses: actions/github-script@v7
         with:
