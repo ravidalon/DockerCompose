@@ -24,9 +24,11 @@ jobs:
       - name: Run integration tests
         id: run-tests
         run: |
-          # Run tests and capture output
+          # Run tests with CI-specific configuration
+          # Uses: docker-compose.yml (base) + docker-compose.ci.yml (CI overrides)
+          # Note: docker-compose.override.yml is NOT loaded with explicit -f flags
           set +e  # Don't exit on failure
-          docker compose --env-file default.env --profile test up --build --exit-code-from tests tests 2>&1 | tee test-output.log
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --env-file default.env --profile test up --build --exit-code-from tests tests 2>&1 | tee test-output.log
           TEST_EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
@@ -39,13 +41,13 @@ jobs:
       - name: Capture service logs
         if: always()
         run: |
-          # Capture logs from all services
+          # Capture logs from all services (using CI compose file)
           mkdir -p logs
-          docker compose --profile test logs --no-color > logs/all-services.log 2>&1 || true
-          docker compose --profile test logs --no-color fileshare > logs/fileshare.log 2>&1 || true
-          docker compose --profile test logs --no-color database > logs/database.log 2>&1 || true
-          docker compose --profile test logs --no-color neo4j > logs/neo4j.log 2>&1 || true
-          docker compose --profile test logs --no-color tests > logs/tests.log 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color > logs/all-services.log 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color fileshare > logs/fileshare.log 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color database > logs/database.log 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color neo4j > logs/neo4j.log 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color tests > logs/tests.log 2>&1 || true
 
           # Copy test output
           cp test-output.log logs/ 2>&1 || true
@@ -112,4 +114,4 @@ jobs:
 
       - name: Clean up
         if: always()
-        run: docker compose --profile test down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test down -v

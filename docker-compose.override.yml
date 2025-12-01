@@ -1,0 +1,55 @@
+# docker-compose.override.yml
+# Automatically loaded in local development (docker compose up)
+# NOT loaded in CI or with explicit -f flags
+#
+# This file contains development-specific configurations:
+# - Hot-reload bind mounts for code changes
+# - Debug logging
+# - Convenient port mappings for direct service access
+#
+# To disable: docker compose --no-override up
+
+services:
+  # Echo service - development configuration
+  echo:
+    volumes:
+      - ./services/echo/echo:/app/echo  # Hot-reload for code changes
+    environment:
+      - FLASK_DEBUG=1  # Enable Flask debug mode
+
+  # Database service - development configuration
+  database:
+    volumes:
+      - ./services/database/database:/app/database  # Hot-reload for code changes
+    environment:
+      - FLASK_DEBUG=1  # Enable Flask debug mode
+    # Expose port for direct access during development (bypassing Traefik)
+    ports:
+      - "5001:5000"
+
+  # Fileshare service - development configuration
+  fileshare:
+    volumes:
+      - ./services/fileshare/fileshare:/app/fileshare  # Hot-reload for code changes
+    environment:
+      - FLASK_DEBUG=1  # Enable Flask debug mode
+    # Expose port for direct access during development (bypassing Traefik)
+    ports:
+      - "5002:5000"
+
+  # Neo4j - expose ports for local browser access and debugging
+  neo4j:
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"  # Browser UI at http://localhost:7474
+      - "${NEO4J_BOLT_PORT:-7687}:7687"  # Bolt protocol
+
+  # Traefik - verbose logging for development
+  traefik:
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-DEBUG}"  # Verbose logging
+      - "--accesslog=true"  # Log all requests
+      - "--ping=true"
