@@ -1,8 +1,10 @@
 """Node CRUD operation routes"""
 from typing import Any
+
 from flask import Blueprint, request, jsonify
-from werkzeug.wrappers.response import Response as WerkzeugResponse
 from neo4j.exceptions import Neo4jError
+from werkzeug.wrappers.response import Response as WerkzeugResponse
+
 from database.db import get_db, node_to_dict
 from database.validation import validate_identifier, validate_identifiers
 

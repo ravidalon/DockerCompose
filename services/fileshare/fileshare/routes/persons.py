@@ -1,7 +1,10 @@
-"""Person management endpoints."""
-
 from datetime import datetime, timezone
+
+from typing import Any
+
 from flask import Blueprint, request, jsonify
+from werkzeug.wrappers.response import Response as WerkzeugResponse
+
 from ..db_client import call_database
 from ..person_utils import person_exists, get_person_by_name
 
@@ -9,16 +12,15 @@ bp = Blueprint("persons", __name__, url_prefix="/persons")
 
 
 @bp.route("", methods=["POST"])
-def create_person():
-    """Create a new person node."""
-    data = request.get_json()
+def create_person() -> tuple[WerkzeugResponse, int]:
+    """Create a new person node in the database"""
+    data: dict[str, Any] | None = request.get_json()
 
     if not data or "name" not in data:
         return jsonify({"error": "name is required"}), 400
 
-    name = data["name"]
+    name: str = data["name"]
 
-    # Check if person already exists
     if person_exists(name):
         return jsonify({"error": f"Person with name '{name}' already exists"}), 409
 
@@ -36,8 +38,8 @@ def create_person():
 
 
 @bp.route("/<person_name>", methods=["GET"])
-def get_person(person_name: str):
-    """Get person by name."""
+def get_person(person_name: str) -> tuple[WerkzeugResponse, int]:
+    """Get person by name"""
     person = get_person_by_name(person_name)
 
     if not person:
@@ -47,16 +49,15 @@ def get_person(person_name: str):
 
 
 @bp.route("", methods=["GET"])
-def list_persons():
-    """List all persons."""
+def list_persons() -> tuple[WerkzeugResponse, int]:
+    """List all persons"""
     result = call_database("GET", "nodes/label/Person", None)
     return jsonify(result)
 
 
 @bp.route("/<person_name>/files", methods=["GET"])
-def get_person_files(person_name: str):
-    """Get all files uploaded by a person."""
-    # Check if person exists
+def get_person_files(person_name: str) -> tuple[WerkzeugResponse, int]:
+    """Get files uploaded by person"""
     person = get_person_by_name(person_name)
     if not person:
         return jsonify({"error": f"Person '{person_name}' not found"}), 404
@@ -73,7 +74,7 @@ def get_person_files(person_name: str):
 
     result = call_database("POST", "query/cypher", query_data)
 
-    files = []
+    files: list[dict] = []
     for record in result.get("results", []):
         if "f" in record:
             files.append(record["f"])

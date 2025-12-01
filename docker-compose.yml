@@ -20,17 +20,17 @@ services:
   traefik:
     image: traefik:v3.0
     command:
-      - "--api.insecure=true"  # Development only - use authentication in production
+      - "--api.insecure=true"  # Insecure API for development only
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
-      - "--log.level=${TRAEFIK_LOG_LEVEL:-DEBUG}"  # DEBUG level for easier troubleshooting in development
-      - "--ping=true"  # Enable health check endpoint
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-DEBUG}"
+      - "--ping=true"
     ports:
-      - "${TRAEFIK_HTTP_PORT:-80}:80"       # HTTP entrypoint
-      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"   # Traefik dashboard
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro  # Read-only access
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Read-only prevents container modification
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 10s
@@ -42,7 +42,7 @@ services:
       - frontend_network
 
   echo:
-    <<: [*flask-service, *common-profiles]  # Inherits healthcheck, restart policy, FLASK_ENV, and profiles
+    <<: [*flask-service, *common-profiles]
     build: ./services/echo
     depends_on:
       traefik:
@@ -55,10 +55,10 @@ services:
       - "traefik.http.middlewares.echo-stripprefix.stripprefix.prefixes=/echo"
       - "traefik.http.services.echo.loadbalancer.server.port=5000"
     networks:
-      - frontend_network  # Public-facing, accessible via Traefik
+      - frontend_network
 
   database:
-    <<: [*flask-service, *common-profiles]  # Inherits healthcheck, restart policy, FLASK_ENV, and profiles
+    <<: [*flask-service, *common-profiles]
     build: ./services/database
     environment:
       - FLASK_ENV=${FLASK_ENV:-development}
@@ -67,26 +67,26 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
     depends_on:
       neo4j:
-        condition: service_healthy  # Wait for Neo4j to be healthy
+        condition: service_healthy
     networks:
-      - backend_network   # Accessible to fileshare
-      - database_network  # Can reach Neo4j
-    # No Traefik labels - internal only
+      - backend_network
+      - database_network
+    # Not exposed via Traefik - internal API only
 
   fileshare:
-    <<: [*flask-service, *common-profiles]  # Inherits healthcheck, restart policy, FLASK_ENV, and profiles
+    <<: [*flask-service, *common-profiles]
     build: ./services/fileshare
     environment:
       - FLASK_ENV=${FLASK_ENV:-development}
       - DATABASE_URL=http://database:5000
       - UPLOAD_DIR=${UPLOAD_DIR:-/app/uploads}
     volumes:
-      - fileshare_uploads:/app/uploads  # Named volume for persistent file storage
+      - fileshare_uploads:/app/uploads
     depends_on:
       traefik:
         condition: service_healthy
       database:
-        condition: service_healthy  # Wait for database to be healthy
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.fileshare.rule=PathPrefix(`/fileshare`)"
@@ -95,8 +95,8 @@ services:
       - "traefik.http.middlewares.fileshare-stripprefix.stripprefix.prefixes=/fileshare"
       - "traefik.http.services.fileshare.loadbalancer.server.port=5000"
     networks:
-      - frontend_network  # Public-facing, accessible via Traefik
-      - backend_network   # Can reach database service
+      - frontend_network
+      - backend_network
 
   frontend:
     build: ./frontend
@@ -111,20 +111,20 @@ services:
       traefik:
         condition: service_healthy
       fileshare:
-        condition: service_healthy  # Wait for fileshare to be healthy
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
       - "traefik.http.routers.frontend.entrypoints=web"
-      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.routers.frontend.priority=1"  # Lowest priority - catch-all route
       - "traefik.http.services.frontend.loadbalancer.server.port=80"
     networks:
-      - frontend_network  # Public-facing, accessible via Traefik
+      - frontend_network
     profiles:
       - dev
 
   neo4j:
-    <<: *common-profiles  # Inherits profile definitions
+    <<: *common-profiles
     image: neo4j:5.14-community
     environment:
       - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
@@ -136,10 +136,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s  # Neo4j needs more time to start
+      start_period: 30s  # Database needs time to initialize
     restart: unless-stopped
     networks:
-      - database_network  # Most isolated - only database service can reach it
+      - database_network  # Isolated - only database service has access
 
   tests:
     build:
@@ -153,14 +153,14 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
     depends_on:
       fileshare:
-        condition: service_healthy  # Wait for fileshare to be healthy
+        condition: service_healthy
       database:
-        condition: service_healthy  # Wait for database to be healthy
+        condition: service_healthy
       neo4j:
-        condition: service_healthy  # Wait for Neo4j to be healthy
+        condition: service_healthy
     networks:
-      - backend_network   # Can reach fileshare and database
-      - database_network  # Can reach Neo4j for direct queries
+      - backend_network
+      - database_network  # Direct Neo4j access for verification
     profiles:
       - test
 
@@ -170,17 +170,15 @@ volumes:
   fileshare_uploads:
 
 networks:
-  # Frontend network - public-facing services accessible via Traefik
   frontend_network:
     name: dockercompose_frontend
     driver: bridge
 
-  # Backend network - internal API communication between fileshare and database
   backend_network:
     name: dockercompose_backend
     driver: bridge
 
-  # Database network - most isolated, only database service can reach Neo4j
   database_network:
     name: dockercompose_database
     driver: bridge
+    # Most isolated layer - only database service can reach Neo4j

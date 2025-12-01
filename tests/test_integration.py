@@ -6,7 +6,6 @@ import requests
 
 def test_person_creation_in_database(fileshare_url, neo4j_driver, cleanup_test_data):
     """Test that creating a person via API creates a node in Neo4j."""
-    # Create person via API
     person_name = "TestUser_PersonCreation"
     email = "testuser_personcreation@test.com"
     response = requests.post(
@@ -15,7 +14,6 @@ def test_person_creation_in_database(fileshare_url, neo4j_driver, cleanup_test_d
     )
     assert response.status_code in [200, 201]
 
-    # Verify person exists in database
     with neo4j_driver.session() as session:
         result = session.run(
             "MATCH (p:Person {name: $name}) RETURN p.name, p.email",
@@ -31,7 +29,6 @@ def test_file_upload_creates_nodes_and_relationships(
     fileshare_url, neo4j_driver, test_person
 ):
     """Test that uploading a file creates File node and UPLOADED relationship."""
-    # Upload file
     filename = "test_upload.txt"
     file_content = b"Test file content for upload"
     files = {"file": (filename, io.BytesIO(file_content), "text/plain")}
@@ -40,7 +37,6 @@ def test_file_upload_creates_nodes_and_relationships(
     response = requests.post(f"{fileshare_url}/files/upload", files=files, data=data)
     assert response.status_code in [200, 201]
 
-    # Verify File node exists
     with neo4j_driver.session() as session:
         result = session.run(
             "MATCH (f:File {filename: $filename}) RETURN f.filename, f.size, f.content_type",
@@ -52,7 +48,6 @@ def test_file_upload_creates_nodes_and_relationships(
         assert record["f.size"] == len(file_content)
         assert record["f.content_type"] == "text/plain"
 
-    # Verify UPLOADED relationship exists
     with neo4j_driver.session() as session:
         result = session.run(
             """
@@ -69,7 +64,6 @@ def test_file_upload_creates_nodes_and_relationships(
 
 def test_file_download_creates_relationship(fileshare_url, neo4j_driver, test_person):
     """Test that downloading a file creates DOWNLOADED relationship."""
-    # Upload file first
     filename = "test_download.txt"
     file_content = b"Test file for download"
     files = {"file": (filename, io.BytesIO(file_content), "text/plain")}
@@ -78,14 +72,12 @@ def test_file_download_creates_relationship(fileshare_url, neo4j_driver, test_pe
     response = requests.post(f"{fileshare_url}/files/upload", files=files, data=data)
     assert response.status_code in [200, 201]
 
-    # Download the file
     response = requests.get(
         f"{fileshare_url}/files/{test_person}/{filename}/download"
     )
     assert response.status_code == 200
     assert response.content == file_content
 
-    # Verify DOWNLOADED relationship exists
     with neo4j_driver.session() as session:
         result = session.run(
             """
@@ -102,7 +94,6 @@ def test_file_download_creates_relationship(fileshare_url, neo4j_driver, test_pe
 
 def test_file_edit_creates_relationship(fileshare_url, neo4j_driver, test_person):
     """Test that editing a file creates EDITED relationship."""
-    # Upload file first
     filename = "test_edit.txt"
     original_content = b"Original content"
     files = {"file": (filename, io.BytesIO(original_content), "text/plain")}
@@ -111,7 +102,6 @@ def test_file_edit_creates_relationship(fileshare_url, neo4j_driver, test_person
     response = requests.post(f"{fileshare_url}/files/upload", files=files, data=data)
     assert response.status_code in [200, 201]
 
-    # Edit the file
     new_content = b"Edited content"
     files = {"file": (filename, io.BytesIO(new_content), "text/plain")}
 
@@ -121,7 +111,6 @@ def test_file_edit_creates_relationship(fileshare_url, neo4j_driver, test_person
     )
     assert response.status_code == 200
 
-    # Verify EDITED relationship exists
     with neo4j_driver.session() as session:
         result = session.run(
             """
@@ -138,7 +127,6 @@ def test_file_edit_creates_relationship(fileshare_url, neo4j_driver, test_person
 
 def test_batch_upload_creates_relationships(fileshare_url, neo4j_driver, test_person):
     """Test that batch uploading files creates UPLOADED_WITH relationships."""
-    # Upload batch of files
     file1_name = "test_batch_1.txt"
     file2_name = "test_batch_2.txt"
     file1_content = b"Batch file 1"
@@ -157,7 +145,6 @@ def test_batch_upload_creates_relationships(fileshare_url, neo4j_driver, test_pe
     )
     assert response.status_code in [200, 201]
 
-    # Verify both files exist
     with neo4j_driver.session() as session:
         result = session.run(
             "MATCH (f:File) WHERE f.filename IN [$file1, $file2] RETURN count(f) as file_count",
@@ -167,7 +154,6 @@ def test_batch_upload_creates_relationships(fileshare_url, neo4j_driver, test_pe
         record = result.single()
         assert record["file_count"] == 2, "Not all batch files found in database"
 
-    # Verify UPLOADED_WITH relationship exists between the files
     with neo4j_driver.session() as session:
         result = session.run(
             """

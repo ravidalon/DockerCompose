@@ -24,32 +24,24 @@ jobs:
       - name: Run integration tests
         id: run-tests
         run: |
-          # Run tests with CI-specific configuration
-          # Uses: docker-compose.yml (base) + docker-compose.ci.yml (CI overrides)
-          # Note: docker-compose.override.yml is NOT loaded with explicit -f flags
-          set +e  # Don't exit on failure
+          # Uses docker-compose.ci.yml for CI-specific overrides (docker-compose.override.yml is NOT loaded with explicit -f flags)
+          set +e
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --env-file default.env --profile test up --build --exit-code-from tests tests 2>&1 | tee test-output.log
           TEST_EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
-          # Save exit code for later steps
           echo "exit_code=$TEST_EXIT_CODE" >> $GITHUB_OUTPUT
-
-          # Exit with test exit code
           exit $TEST_EXIT_CODE
 
       - name: Capture service logs
         if: always()
         run: |
-          # Capture logs from all services (using CI compose file)
           mkdir -p logs
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color > logs/all-services.log 2>&1 || true
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color fileshare > logs/fileshare.log 2>&1 || true
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color database > logs/database.log 2>&1 || true
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color neo4j > logs/neo4j.log 2>&1 || true
           docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test logs --no-color tests > logs/tests.log 2>&1 || true
-
-          # Copy test output
           cp test-output.log logs/ 2>&1 || true
 
       - name: Upload logs as artifact
@@ -64,16 +56,13 @@ jobs:
         if: failure() && steps.run-tests.outputs.exit_code != '0'
         id: parse-failures
         run: |
-          # Extract failed test names from output
           echo "## ❌ Integration Tests Failed" > failure-summary.md
           echo "" >> failure-summary.md
 
-          # Extract failed test names
           if grep -q "FAILED test_" test-output.log; then
             echo "### Failed Tests:" >> failure-summary.md
             echo "" >> failure-summary.md
 
-            # Get test names from short summary
             grep "^tests-[0-9]*  | FAILED test_" test-output.log | \
               sed 's/^tests-[0-9]*  | FAILED //' | \
               sed 's/ - .*//' | \
@@ -84,7 +73,6 @@ jobs:
             echo "" >> failure-summary.md
           fi
 
-          # Add summary section
           echo "### Summary:" >> failure-summary.md
           if grep -q "failed" test-output.log; then
             grep -E "=+ [0-9]+ failed" test-output.log | tail -1 | sed 's/^tests-[0-9]*  | //' >> failure-summary.md
@@ -93,7 +81,6 @@ jobs:
           echo "" >> failure-summary.md
           echo "Please fix the failing tests and push new commits." >> failure-summary.md
 
-          # Save for comment
           cat failure-summary.md
           echo "HAS_FAILURES=true" >> $GITHUB_OUTPUT
 

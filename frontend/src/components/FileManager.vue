@@ -1,24 +1,30 @@
 <template>
   <div>
-    <div class="user-info">
+    <div class="user-info" role="banner">
       <div>
         <p>Logged in as <strong>{{ user.name }}</strong></p>
         <p v-if="user.email"><small>{{ user.email }}</small></p>
       </div>
-      <button class="secondary" @click="emit('logout')">Logout</button>
+      <button class="secondary" @click="emit('logout')" aria-label="Logout from file manager">
+        Logout
+      </button>
     </div>
 
     <h1>File Manager</h1>
 
-    <div v-if="message.text" :class="['message', message.type]">
+    <div
+      v-if="message.text"
+      :class="['message', message.type]"
+      role="alert"
+      :aria-live="message.type === 'error' ? 'assertive' : 'polite'"
+    >
       {{ message.text }}
     </div>
 
     <div class="actions">
-      <!-- Upload Section -->
-      <div class="action-card">
-        <h3>Upload File</h3>
-        <form @submit.prevent="handleUpload">
+      <section class="action-card" aria-labelledby="upload-heading">
+        <h3 id="upload-heading">Upload File</h3>
+        <form @submit.prevent="handleUpload" aria-label="File upload form">
           <div class="form-group">
             <label for="file">Choose file</label>
             <input
@@ -27,103 +33,129 @@
               ref="fileInput"
               @change="handleFileSelect"
               :disabled="uploading"
+              :aria-busy="uploading"
             />
           </div>
-          <button type="submit" :disabled="!selectedFile || uploading">
+          <button type="submit" :disabled="!selectedFile || uploading" :aria-busy="uploading">
             {{ uploading ? 'Uploading...' : 'Upload' }}
           </button>
         </form>
-      </div>
+      </section>
 
-      <!-- Download Section -->
-      <div class="action-card">
-        <h3>Download File</h3>
+      <section class="action-card" aria-labelledby="download-heading">
+        <h3 id="download-heading">Download File</h3>
         <div class="form-group">
           <label for="download-select">Select file</label>
           <select
             id="download-select"
             v-model="selectedDownloadFile"
             :disabled="downloading || activeFiles.length === 0"
+            :aria-busy="downloading"
           >
             <option value="">{{ activeFiles.length === 0 ? 'No files available' : 'Choose a file...' }}</option>
             <option v-for="file in activeFiles" :key="file.filename" :value="file.filename">
-              {{ file.filename }} ({{ formatSize(file.size) }})
+              {{ file.filename }} ({{ formatFileSize(file.size) }})
             </option>
           </select>
         </div>
         <button
           @click="handleDownload"
           :disabled="!selectedDownloadFile || downloading"
+          :aria-busy="downloading"
+          aria-label="Download selected file"
         >
           {{ downloading ? 'Downloading...' : 'Download' }}
         </button>
-      </div>
+      </section>
     </div>
 
-    <!-- Active Files List -->
-    <div class="file-list">
-      <h3>Your Files ({{ activeFiles.length }})</h3>
-      <div v-if="loadingFiles" class="loading">Loading files...</div>
+    <section class="file-list" aria-labelledby="files-heading">
+      <h3 id="files-heading">Your Files ({{ activeFiles.length }})</h3>
+      <div v-if="loadingFiles" class="loading" role="status" aria-live="polite">
+        Loading files...
+      </div>
       <div v-else-if="activeFiles.length === 0" class="empty-state">
         No files yet. Upload your first file above!
       </div>
-      <div v-else>
-        <div v-for="file in activeFiles" :key="file.filename" class="file-item">
+      <ul v-else role="list" class="file-items-list">
+        <li v-for="file in activeFiles" :key="file.filename" class="file-item">
           <div>
             <span>{{ file.filename }}</span>
-            <small>{{ formatSize(file.size) }}</small>
+            <small>{{ formatFileSize(file.size) }}</small>
           </div>
           <div class="file-actions">
             <button
-              v-if="isTextFile(file)"
+              v-if="isEditableFile(file)"
               @click="handleEdit(file.filename)"
               :disabled="editing"
+              :aria-busy="editing"
               class="edit-btn"
+              :aria-label="`Edit ${file.filename}`"
             >
               Edit
             </button>
-            <button class="secondary" @click="handleDelete(file.filename)" :disabled="deletingFiles.has(file.filename)">
+            <button
+              class="secondary"
+              @click="handleDelete(file.filename)"
+              :disabled="deletingFiles.has(file.filename)"
+              :aria-busy="deletingFiles.has(file.filename)"
+              :aria-label="`Delete ${file.filename}`"
+            >
               Delete
             </button>
           </div>
-        </div>
-      </div>
-    </div>
+        </li>
+      </ul>
+    </section>
 
-    <!-- Deleted Files List -->
-    <div v-if="deletedFiles.length > 0" class="file-list deleted-section">
-      <h3>Deleted Files ({{ deletedFiles.length }})</h3>
+    <section v-if="deletedFiles.length > 0" class="file-list deleted-section" aria-labelledby="deleted-files-heading">
+      <h3 id="deleted-files-heading">Deleted Files ({{ deletedFiles.length }})</h3>
       <p class="info-text">These files have been deleted and cannot be downloaded. You cannot upload files with these names.</p>
-      <div>
-        <div v-for="file in deletedFiles" :key="file.filename" class="file-item deleted">
+      <ul role="list" class="file-items-list">
+        <li v-for="file in deletedFiles" :key="file.filename" class="file-item deleted">
           <div>
             <span>{{ file.filename }}</span>
-            <small>{{ formatSize(file.size) }}</small>
+            <small>{{ formatFileSize(file.size) }}</small>
             <small class="deleted-label">Deleted</small>
           </div>
-        </div>
-      </div>
-    </div>
+        </li>
+      </ul>
+    </section>
 
-    <!-- Edit Modal -->
-    <div v-if="editingFile" class="modal-overlay" @click="closeEditor">
+    <div
+      v-if="editingFile"
+      class="modal-overlay"
+      @click="closeEditor"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="editor-title"
+    >
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h2>Edit {{ editingFile }}</h2>
-          <button class="close-btn" @click="closeEditor">&times;</button>
+          <h2 id="editor-title">Edit {{ editingFile }}</h2>
+          <button
+            class="close-btn"
+            @click="closeEditor"
+            aria-label="Close editor"
+          >
+            &times;
+          </button>
         </div>
         <div class="modal-body">
+          <label for="file-editor" class="visually-hidden">File content editor</label>
           <textarea
+            id="file-editor"
             v-model="fileContent"
             class="file-editor"
             :disabled="saving"
+            :aria-busy="saving"
           ></textarea>
         </div>
         <div class="modal-footer">
           <button class="secondary" @click="closeEditor" :disabled="saving">
             Cancel
           </button>
-          <button @click="saveEdit" :disabled="saving">
+          <button @click="saveEdit" :disabled="saving" :aria-busy="saving">
             {{ saving ? 'Saving...' : 'Save' }}
           </button>
         </div>
@@ -134,6 +166,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { API_BASE, extractFileData, handleApiError, apiRequest } from '../utils/api.js'
+import { formatFileSize } from '../utils/format.js'
+import { isEditableFile, triggerDownload } from '../utils/file.js'
 
 const props = defineProps({
   user: {
@@ -143,8 +178,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['logout'])
-
-const API_BASE = '/fileshare'
 
 const files = ref([])
 const loadingFiles = ref(false)
@@ -161,67 +194,48 @@ const originalContentType = ref('')
 const message = ref({ text: '', type: '' })
 const fileInput = ref(null)
 
-// Separate active and deleted files
 const activeFiles = computed(() => files.value.filter(f => !f.deleted))
 const deletedFiles = computed(() => files.value.filter(f => f.deleted))
 
-// Max file size for editing (1MB)
-const MAX_EDIT_SIZE = 1024 * 1024
-
-// Check if file is a text file based on content type and size
-const isTextFile = (file) => {
-  // Security: Only allow editing files under 1MB
-  if (file.size > MAX_EDIT_SIZE) return false
-
-  const textTypes = [
-    'text/',
-    'application/json',
-    'application/javascript',
-    'application/xml',
-    'application/x-sh',
-    'application/x-yaml'
-  ]
-  return textTypes.some(type => file.content_type?.startsWith(type))
-}
-
+/**
+ * Loads all files for the current user
+ */
 const loadFiles = async () => {
   loadingFiles.value = true
   message.value = { text: '', type: '' }
 
   try {
-    const response = await fetch(`${API_BASE}/persons/${encodeURIComponent(props.user.name)}/files`)
+    const response = await apiRequest(
+      `${API_BASE}/persons/${encodeURIComponent(props.user.name)}/files`
+    )
+
     if (response.ok) {
       const data = await response.json()
-      // Extract files from response and flatten properties
-      files.value = (data.files || []).map(file => ({
-        filename: file.properties?.filename || file.filename,
-        size: file.properties?.size || file.size,
-        content_type: file.properties?.content_type || file.content_type,
-        deleted: file.properties?.deleted || file.deleted
-      }))
+      files.value = (data.files || []).map(extractFileData)
     } else {
-      console.error('Failed to load files')
-      message.value = {
-        text: 'Failed to load files. Please refresh the page.',
-        type: 'error'
-      }
+      const errorMsg = await handleApiError(null, response, 'Failed to load files')
+      message.value = { text: errorMsg, type: 'error' }
     }
   } catch (error) {
     console.error('Error loading files:', error)
-    message.value = {
-      text: 'Network error while loading files. Please check your connection.',
-      type: 'error'
-    }
+    const errorMsg = await handleApiError(error)
+    message.value = { text: errorMsg, type: 'error' }
   } finally {
     loadingFiles.value = false
   }
 }
 
+/**
+ * Handles file selection from input
+ */
 const handleFileSelect = (event) => {
   const file = event.target.files[0]
   selectedFile.value = file || null
 }
 
+/**
+ * Handles file upload to the server
+ */
 const handleUpload = async () => {
   if (!selectedFile.value) return
 
@@ -233,9 +247,9 @@ const handleUpload = async () => {
     formData.append('file', selectedFile.value)
     formData.append('person', props.user.name)
 
-    const response = await fetch(`${API_BASE}/files/upload`, {
+    const response = await apiRequest(`${API_BASE}/files/upload`, {
       method: 'POST',
-      body: formData,
+      body: formData
     })
 
     if (response.ok) {
@@ -249,23 +263,21 @@ const handleUpload = async () => {
       }
       await loadFiles()
     } else {
-      const error = await response.json()
-      message.value = {
-        text: error.error || 'Upload failed',
-        type: 'error'
-      }
+      const errorMsg = await handleApiError(null, response, 'Upload failed')
+      message.value = { text: errorMsg, type: 'error' }
     }
   } catch (error) {
     console.error('Upload error:', error)
-    message.value = {
-      text: 'Upload failed. Please try again.',
-      type: 'error'
-    }
+    const errorMsg = await handleApiError(error, null, 'Upload failed. Please try again.')
+    message.value = { text: errorMsg, type: 'error' }
   } finally {
     uploading.value = false
   }
 }
 
+/**
+ * Handles file download from the server
+ */
 const handleDownload = async () => {
   if (!selectedDownloadFile.value) return
 
@@ -273,24 +285,13 @@ const handleDownload = async () => {
   message.value = { text: '', type: '' }
 
   try {
-    const response = await fetch(
+    const response = await apiRequest(
       `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(selectedDownloadFile.value)}/download`
     )
 
     if (response.ok) {
       const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = selectedDownloadFile.value
-      document.body.appendChild(a)
-      a.click()
-
-      // Delay cleanup to ensure download starts
-      setTimeout(() => {
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      }, 100)
+      triggerDownload(blob, selectedDownloadFile.value)
 
       message.value = {
         text: `Successfully downloaded ${selectedDownloadFile.value}`,
@@ -299,38 +300,32 @@ const handleDownload = async () => {
       selectedDownloadFile.value = ''
       await loadFiles()
     } else {
-      const error = await response.json()
-      message.value = {
-        text: error.error || 'Download failed',
-        type: 'error'
-      }
+      const errorMsg = await handleApiError(null, response, 'Download failed')
+      message.value = { text: errorMsg, type: 'error' }
     }
   } catch (error) {
     console.error('Download error:', error)
-    message.value = {
-      text: 'Download failed. Please try again.',
-      type: 'error'
-    }
+    const errorMsg = await handleApiError(error, null, 'Download failed. Please try again.')
+    message.value = { text: errorMsg, type: 'error' }
   } finally {
     downloading.value = false
   }
 }
 
+/**
+ * Handles file deletion with user confirmation
+ */
 const handleDelete = async (filename) => {
-  // Prevent deleting the same file multiple times
   if (deletingFiles.value.has(filename)) return
-
   if (!confirm(`Are you sure you want to delete ${filename}?`)) return
 
   deletingFiles.value.add(filename)
   message.value = { text: '', type: '' }
 
   try {
-    const response = await fetch(
+    const response = await apiRequest(
       `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(filename)}`,
-      {
-        method: 'DELETE',
-      }
+      { method: 'DELETE' }
     )
 
     if (response.ok) {
@@ -340,35 +335,32 @@ const handleDelete = async (filename) => {
       }
       await loadFiles()
     } else {
-      const error = await response.json()
-      message.value = {
-        text: error.error || 'Delete failed',
-        type: 'error'
-      }
+      const errorMsg = await handleApiError(null, response, 'Delete failed')
+      message.value = { text: errorMsg, type: 'error' }
     }
   } catch (error) {
     console.error('Delete error:', error)
-    message.value = {
-      text: 'Delete failed. Please try again.',
-      type: 'error'
-    }
+    const errorMsg = await handleApiError(error, null, 'Delete failed. Please try again.')
+    message.value = { text: errorMsg, type: 'error' }
   } finally {
     deletingFiles.value.delete(filename)
   }
 }
 
+/**
+ * Opens file editor and loads file content
+ */
 const handleEdit = async (filename) => {
   editing.value = true
   message.value = { text: '', type: '' }
 
   try {
-    // Find the file to get its content type
     const file = activeFiles.value.find(f => f.filename === filename)
     if (file) {
       originalContentType.value = file.content_type
     }
 
-    const response = await fetch(
+    const response = await apiRequest(
       `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(filename)}/download`
     )
 
@@ -377,23 +369,21 @@ const handleEdit = async (filename) => {
       fileContent.value = text
       editingFile.value = filename
     } else {
-      const error = await response.json()
-      message.value = {
-        text: error.error || 'Failed to load file',
-        type: 'error'
-      }
+      const errorMsg = await handleApiError(null, response, 'Failed to load file')
+      message.value = { text: errorMsg, type: 'error' }
     }
   } catch (error) {
     console.error('Edit error:', error)
-    message.value = {
-      text: 'Failed to load file. Please try again.',
-      type: 'error'
-    }
+    const errorMsg = await handleApiError(error, null, 'Failed to load file. Please try again.')
+    message.value = { text: errorMsg, type: 'error' }
   } finally {
     editing.value = false
   }
 }
 
+/**
+ * Saves edited file content to the server
+ */
 const saveEdit = async () => {
   if (!editingFile.value) return
 
@@ -401,7 +391,6 @@ const saveEdit = async () => {
   message.value = { text: '', type: '' }
 
   try {
-    // Create a Blob from the text content, preserving original content type
     const contentType = originalContentType.value || 'text/plain'
     const blob = new Blob([fileContent.value], { type: contentType })
     const file = new File([blob], editingFile.value, { type: contentType })
@@ -409,11 +398,11 @@ const saveEdit = async () => {
     const formData = new FormData()
     formData.append('file', file)
 
-    const response = await fetch(
+    const response = await apiRequest(
       `${API_BASE}/files/${encodeURIComponent(props.user.name)}/${encodeURIComponent(editingFile.value)}`,
       {
         method: 'PUT',
-        body: formData,
+        body: formData
       }
     )
 
@@ -425,35 +414,25 @@ const saveEdit = async () => {
       closeEditor()
       await loadFiles()
     } else {
-      const error = await response.json()
-      message.value = {
-        text: error.error || 'Save failed',
-        type: 'error'
-      }
+      const errorMsg = await handleApiError(null, response, 'Save failed')
+      message.value = { text: errorMsg, type: 'error' }
     }
   } catch (error) {
     console.error('Save error:', error)
-    message.value = {
-      text: 'Save failed. Please try again.',
-      type: 'error'
-    }
+    const errorMsg = await handleApiError(error, null, 'Save failed. Please try again.')
+    message.value = { text: errorMsg, type: 'error' }
   } finally {
     saving.value = false
   }
 }
 
+/**
+ * Closes the file editor modal
+ */
 const closeEditor = () => {
   editingFile.value = null
   fileContent.value = ''
   originalContentType.value = ''
-}
-
-const formatSize = (bytes) => {
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
 }
 
 onMounted(() => {

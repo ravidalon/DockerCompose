@@ -2,64 +2,47 @@
 # CI/CD-specific configuration
 # Use with: docker compose -f docker-compose.yml -f docker-compose.ci.yml up
 #
-# This file contains CI-specific optimizations:
-# - No bind mounts (testing built images)
-# - Production-like environment variables
-# - Stricter health checks
-# - Tests have access to Neo4j for verification
-#
-# In CI, the base docker-compose.yml is used with this file,
-# and docker-compose.override.yml is NOT loaded.
+# CI-specific overrides:
+# - No bind mounts (tests built images)
+# - Production environment settings
+# - No exposed ports (internal networking only)
+# - Faster health checks
 
 services:
-  # Echo service - CI configuration
   echo:
     environment:
-      - FLASK_ENV=production  # Test with production settings
-    # No volumes - testing the built image, not local code
+      - FLASK_ENV=production
 
-  # Database service - CI configuration
   database:
     environment:
-      - FLASK_ENV=production  # Test with production settings
-    # No volumes - testing the built image
-    # No exposed ports - accessed only through service network
+      - FLASK_ENV=production
 
-  # Fileshare service - CI configuration
   fileshare:
     environment:
-      - FLASK_ENV=production  # Test with production settings
-    # No volumes - testing the built image
-    # No exposed ports - accessed only through service network
+      - FLASK_ENV=production
 
-  # Neo4j - no exposed ports in CI
   neo4j:
-    # Override to remove port mappings (not needed in CI)
-    ports: []
+    ports: []  # No external access needed
     healthcheck:
-      # More aggressive health check for CI
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 30s
 
-  # Traefik - minimal logging in CI
   traefik:
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
-      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"  # Less verbose in CI
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
       - "--ping=true"
-    # No access log in CI to reduce noise
 
-  # Tests service - full network access in CI for verification
   tests:
     networks:
-      - backend_network   # Can reach fileshare and database
-      - database_network  # Can also reach Neo4j directly for test verification
+      - backend_network
+      - database_network
     depends_on:
       fileshare:
         condition: service_healthy
@@ -67,5 +50,4 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
-    # Ensure tests fail fast in CI
-    restart: "no"
+    restart: "no"  # Fail fast in CI
