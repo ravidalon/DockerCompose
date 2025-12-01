@@ -104,6 +104,38 @@ The compose file uses extension fields to reduce duplication:
 
 Services inherit these using YAML anchors (`<<: *flask-service`), making the configuration more maintainable.
 
+#### Override Files (Environment-Specific Configuration)
+The project uses multiple compose files to handle different environments:
+
+- **`docker-compose.yml`**: Base configuration shared by all environments
+- **`docker-compose.override.yml`**: Local development overrides (auto-loaded)
+  - Hot-reload bind mounts for code changes
+  - Debug logging enabled
+  - Exposed ports for direct service access (bypassing Traefik)
+  - Neo4j browser UI accessible at `http://localhost:7474`
+- **`docker-compose.ci.yml`**: CI/CD-specific configuration (explicit)
+  - No bind mounts (tests built images)
+  - Production-like environment variables
+  - Stricter health checks for faster CI runs
+  - Tests have access to Neo4j for direct verification
+
+**Usage:**
+```bash
+# Local development (automatically uses override file)
+docker compose up
+
+# Disable override file explicitly
+docker compose --no-override up
+
+# CI (uses base + ci.yml, override NOT loaded)
+docker compose -f docker-compose.yml -f docker-compose.ci.yml up
+
+# View merged configuration
+docker compose config
+```
+
+This pattern demonstrates how to maintain a single base configuration while customizing for different environments without duplication.
+
 #### Health Checks & Smart Dependencies
 All services include health checks to ensure they're truly ready before dependent services start:
 - **Traefik**: Uses built-in `traefik healthcheck --ping` command
@@ -203,17 +235,23 @@ npm run dev  # Runs on http://localhost:5173
 
 ### Docker Operations
 ```bash
-# Build and start all services (uses 'dev' profile by default)
-docker compose --env-file default.env --profile dev up --build
+# Local development (automatically uses docker-compose.override.yml)
+docker compose --profile dev up --build
 
 # Start with backend only (no frontend)
-docker compose --env-file default.env --profile backend-only up --build
+docker compose --profile backend-only up --build
+
+# Start services in detached mode
+docker compose --profile dev up -d
 
 # Use custom environment file
 docker compose --env-file .env --profile dev up --build
 
-# Start services in detached mode
-docker compose --env-file default.env --profile dev up -d
+# CI/CD (uses docker-compose.ci.yml, override NOT loaded)
+docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test up --build
+
+# View merged configuration (useful for debugging)
+docker compose config
 
 # Stop all services
 docker compose down
@@ -228,8 +266,8 @@ docker compose logs -f fileshare
 docker compose logs -f frontend
 
 # Rebuild a specific service
-docker compose --env-file default.env --profile dev up --build fileshare
-docker compose --env-file default.env --profile dev up --build frontend
+docker compose --profile dev up --build fileshare
+docker compose --profile dev up --build frontend
 ```
 
 ### Running Tests
@@ -245,11 +283,14 @@ The project includes integration tests that verify the fileshare service correct
 
 **Run tests using Docker Compose:**
 ```bash
-# Run tests with the test profile
-docker compose --env-file default.env --profile test up --build tests
+# Run tests locally (uses docker-compose.override.yml)
+docker compose --profile test up --build tests
 
-# Run tests and exit (recommended for CI)
-docker compose --env-file default.env --profile test up --build --exit-code-from tests tests
+# Run tests and exit
+docker compose --profile test up --build --exit-code-from tests tests
+
+# Run tests in CI mode (uses docker-compose.ci.yml)
+docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test up --build --exit-code-from tests tests
 
 # Clean up after tests
 docker compose --profile test down
