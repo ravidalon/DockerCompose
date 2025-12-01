@@ -4,467 +4,180 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Docker Compose microservices demo project with three Python Flask backend services and a Vue.js frontend:
-- `echo`: Simple echo service that returns JSON data sent to it
-- `database`: Graph database API service with full Neo4j integration for nodes, relationships, and queries
-- `fileshare`: File storage service with graph-based tracking of uploads, downloads, and edits
-- `frontend`: Vue 3 + Vite SPA for user-friendly file management interface
+Docker Compose microservices demo with three Python Flask backends and a Vue.js frontend:
+- **echo**: Simple echo service
+- **database**: Neo4j graph database API (nodes, relationships, queries)
+- **fileshare**: File storage with graph-based tracking
+- **frontend**: Vue 3 + Vite SPA for file management
 
-## Architecture
+## Quick Start
 
-### Service Structure
-Each service follows this pattern:
-```
-services/{service_name}/
-├── Dockerfile
-├── pyproject.toml
-├── uv.lock
-├── {service_name}/
-│   ├── __init__.py
-│   └── app.py
-```
-
-The database service has additional modular structure:
-```
-services/database/database/
-├── app.py           # Application factory and entry point
-├── db.py            # Neo4j database connection management
-├── validation.py    # Input validation to prevent injection attacks
-└── routes/
-    ├── __init__.py
-    ├── nodes.py         # Node CRUD operations
-    ├── relationships.py # Relationship CRUD operations
-    ├── queries.py       # Cypher queries and path finding
-    └── utils.py         # Health check and statistics
-```
-
-The fileshare service has a similar modular structure:
-```
-services/fileshare/fileshare/
-├── app.py           # Application factory and entry point
-├── config.py        # Configuration (upload dir, database URL)
-├── db_client.py     # Database service HTTP client
-└── routes/
-    ├── __init__.py
-    ├── persons.py   # Person management and queries
-    └── files.py     # File operations (upload, download, edit, delete)
-```
-
-The frontend is a Vue 3 SPA:
-```
-frontend/
-├── Dockerfile       # Multi-stage build: Node.js build + nginx serve
-├── nginx.conf       # nginx config with SPA routing and API proxying
-├── package.json     # Vue 3 and Vite dependencies
-├── vite.config.js   # Vite configuration
-├── index.html       # Entry HTML
-└── src/
-    ├── main.js          # App entry point
-    ├── App.vue          # Root component
-    ├── style.css        # Global styles
-    └── components/
-        ├── LoginView.vue    # User login/registration
-        └── FileManager.vue  # File upload/download UI
-```
-
-### Dependency Management
-- **Backend**: Uses `uv` for Python dependency management
-  - Root `pyproject.toml` defines workspace with all services as path dependencies
-  - Each service has its own `pyproject.toml` with service-specific dependencies
-    - echo: Flask
-    - database: Flask, neo4j driver
-    - fileshare: Flask, requests (for calling database service)
-  - Services share the same Python environment for local development
-- **Frontend**: Uses npm for JavaScript dependency management
-  - Vue 3 for reactive UI components
-  - Vite for fast development and optimized production builds
-
-### Docker Setup
-- **Backend services** run Flask on port 5000 internally
-- **Frontend** runs nginx on port 80 internally, built with multi-stage Docker build
-- **Traefik** reverse proxy routes external traffic:
-  - `/` → frontend (Vue SPA - lowest priority)
-  - `/echo/*` → echo service (public)
-  - `/fileshare/*` → fileshare service (public, proxied by frontend nginx and Traefik)
-  - database service: internal only (no external access)
-- Traefik dashboard available at `http://localhost:8080`
-- Volume types demonstrated:
-  - **Bind mounts** (code hot-reloading): `./services/{name}/{name}:/app/{name}`
-  - **Named volumes** (persistent data): `neo4j_data`, `neo4j_logs`, `fileshare_uploads`
-- Backend services use Python 3.11-slim base image with `uv` package manager
-- Frontend uses Node.js 20 for build, nginx:alpine for serving
-- Service dependencies: frontend depends on fileshare, fileshare depends on database, database depends on neo4j
-
-### Advanced Docker Compose Features
-
-#### Extension Fields (DRY Configuration)
-The compose file uses extension fields to reduce duplication:
-- **`x-flask-service`**: Common Flask service configuration (healthcheck, restart policy, FLASK_ENV)
-- **`x-common-profiles`**: Shared profile definitions for dev, backend-only, and test
-
-Services inherit these using YAML anchors (`<<: *flask-service`), making the configuration more maintainable.
-
-#### Override Files (Environment-Specific Configuration)
-The project uses multiple compose files to handle different environments:
-
-- **`docker-compose.yml`**: Base configuration shared by all environments
-- **`docker-compose.override.yml`**: Local development overrides (auto-loaded)
-  - Hot-reload bind mounts for code changes
-  - Debug logging enabled
-  - Exposed ports for direct service access (bypassing Traefik)
-  - Neo4j browser UI accessible at `http://localhost:7474`
-- **`docker-compose.ci.yml`**: CI/CD-specific configuration (explicit)
-  - No bind mounts (tests built images)
-  - Production-like environment variables
-  - Stricter health checks for faster CI runs
-  - Tests have access to Neo4j for direct verification
-
-**Usage:**
 ```bash
-# Local development (automatically uses override file)
-docker compose up
+# Start all services (web UI at http://localhost)
+docker compose up --build
 
-# Disable override file explicitly
-docker compose --no-override up
+# Backend only (no frontend)
+docker compose --profile backend-only up --build
 
-# CI (uses base + ci.yml, override NOT loaded)
-docker compose -f docker-compose.yml -f docker-compose.ci.yml up
+# Run integration tests
+docker compose --profile test up --build --exit-code-from tests tests
 
-# View merged configuration
-docker compose config
+# View Traefik dashboard
+open http://localhost:8080
 ```
 
-This pattern demonstrates how to maintain a single base configuration while customizing for different environments without duplication.
+## Architecture Overview
 
-#### Health Checks & Smart Dependencies
-All services include health checks to ensure they're truly ready before dependent services start:
-- **Traefik**: Uses built-in `traefik healthcheck --ping` command
-- **Flask services** (echo, database, fileshare): `curl -f http://localhost:5000/health`
-- **Frontend**: `curl -f http://localhost/` (nginx health)
-- **Neo4j**: `wget --spider http://localhost:7474` with 30s start period
+### Services
+- **Backend**: Python 3.11 + Flask + uv package manager
+- **Frontend**: Vue 3 + Vite, served by nginx
+- **Database**: Neo4j graph database (internal only)
+- **Routing**: Traefik reverse proxy with path-based routing
 
-Dependencies use `condition: service_healthy` instead of `service_started`, ensuring:
-- Neo4j is fully initialized before database service starts
-- Database service is ready before fileshare makes API calls
-- All backend services are healthy before tests run
+### Routing & Network Isolation
+```
+Traefik (public entry point)
+├── / → frontend (Vue SPA)
+├── /echo/* → echo service
+└── /fileshare/* → fileshare service
+    └── (internal) → database service
+        └── (internal) → neo4j
+```
 
-This eliminates startup race conditions and connection errors.
+Three-layer network security:
+- **Frontend network**: Public-facing (traefik, echo, fileshare, frontend)
+- **Backend network**: Internal APIs (fileshare, database)
+- **Database network**: Most isolated (database, neo4j)
 
-#### Network Isolation (Security Best Practice)
-Services are isolated using three separate Docker networks:
+## Docker Compose Features Demonstrated
 
-**Frontend Network** (`dockercompose_frontend`):
-- Public-facing layer accessible via Traefik
-- Services: traefik, echo, fileshare, frontend
+### 1. Extension Fields & YAML Anchors
+Reusable configuration blocks reduce duplication:
+- `x-flask-service`: Common Flask config (health checks, restart policy)
+- `x-common-profiles`: Shared profile definitions
 
-**Backend Network** (`dockercompose_backend`):
-- Internal API communication layer
-- Services: fileshare, database
+### 2. Multiple Compose Files
+- `docker-compose.yml`: Base configuration
+- `docker-compose.override.yml`: Local dev (auto-loaded, hot-reload enabled)
+- `docker-compose.ci.yml`: CI/CD (explicit, production-like)
 
-**Database Network** (`dockercompose_database`):
-- Most isolated layer - only database service can reach Neo4j
-- Services: database, neo4j
+### 3. Profiles
+- `dev`: Full stack with frontend (default)
+- `backend-only`: APIs without UI
+- `test`: Backend + integration tests
 
-This architecture provides defense-in-depth:
-- Neo4j is never exposed to public-facing services
-- Each service only has access to networks it needs
-- Compromised frontend cannot directly access database layer
+### 4. Health Checks & Smart Dependencies
+All services use health checks with `condition: service_healthy` to eliminate startup race conditions.
 
-## Development Commands
+### 5. Network Isolation
+Three-layer network architecture prevents direct access between layers (e.g., frontend cannot reach Neo4j).
 
-### Environment Configuration
+### 6. Volume Types
+- **Bind mounts**: Hot-reloading for development
+- **Named volumes**: Persistent data (neo4j_data, fileshare_uploads)
 
-The project uses environment files to configure services:
+## Common Commands
 
-- **`default.env`**: Default configuration values (committed to repo)
-- **`example.env`**: Template showing all available variables (committed to repo)
-- **`.env`**: Optional local overrides (not committed, takes precedence)
-
-To use custom configuration:
+### Docker Compose
 ```bash
-# Copy example and customize
-cp example.env .env
-# Edit .env with your values
+# Start all services (dev mode with hot-reload)
+docker compose up --build
+
+# Backend only
+docker compose --profile backend-only up --build
+
+# Detached mode
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# View logs
+docker compose logs -f [service_name]
+
+# Run tests
+docker compose --profile test up --build --exit-code-from tests tests
 ```
-
-Available environment variables:
-- `NEO4J_USER`, `NEO4J_PASSWORD`: Neo4j credentials
-- `NEO4J_HTTP_PORT`, `NEO4J_BOLT_PORT`: Neo4j port mappings
-- `FLASK_ENV`: Flask environment mode
-- `TRAEFIK_HTTP_PORT`, `TRAEFIK_DASHBOARD_PORT`: Traefik port mappings
-- `TRAEFIK_LOG_LEVEL`: Traefik logging verbosity
-- `UPLOAD_DIR`: File upload directory path
-- `COMPOSE_PROJECT_NAME`: Docker Compose project name
-
-### Docker Compose Profiles
-
-Services are organized into profiles for different use cases:
-
-- **`dev`** (default): Full stack including frontend
-  - Includes: traefik, echo, database, fileshare, frontend, neo4j
-  - Use for: Local development with web UI
-
-- **`backend-only`**: Backend services without frontend
-  - Includes: traefik, echo, database, fileshare, neo4j
-  - Use for: API testing, backend development
-
-- **`test`**: Backend services with integration test runner
-  - Includes: traefik, echo, database, fileshare, neo4j, tests
-  - Use for: Running integration tests in Docker
 
 ### Local Development
 ```bash
-# Backend: Install dependencies for all services
+# Backend: Install dependencies
 uv sync
 
-# Run a specific backend service locally (from service directory)
-cd services/echo
-python -m echo.app
-
-cd services/database
-python -m database.app
-
+# Run specific service
 cd services/fileshare
 python -m fileshare.app
 
-# Frontend: Install dependencies and run dev server
+# Frontend: Install and run
 cd frontend
 npm install
-npm run dev  # Runs on http://localhost:5173
+npm run dev  # http://localhost:5173
 ```
 
-### Docker Operations
-```bash
-# Local development (automatically uses docker-compose.override.yml)
-docker compose --profile dev up --build
+### Environment Configuration
+- `default.env`: Default values (committed)
+- `.env`: Local overrides (not committed)
+- Copy `example.env` to `.env` for customization
 
-# Start with backend only (no frontend)
-docker compose --profile backend-only up --build
-
-# Start services in detached mode
-docker compose --profile dev up -d
-
-# Use custom environment file
-docker compose --env-file .env --profile dev up --build
-
-# CI/CD (uses docker-compose.ci.yml, override NOT loaded)
-docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test up --build
-
-# View merged configuration (useful for debugging)
-docker compose config
-
-# Stop all services
-docker compose down
-
-# View logs for all services
-docker compose logs -f
-
-# View logs for specific service
-docker compose logs -f echo
-docker compose logs -f database
-docker compose logs -f fileshare
-docker compose logs -f frontend
-
-# Rebuild a specific service
-docker compose --profile dev up --build fileshare
-docker compose --profile dev up --build frontend
-```
-
-### Running Tests
-
-The project includes integration tests that verify the fileshare service correctly updates the Neo4j database.
-
-**Test Coverage:**
-- Person creation in database
-- File upload (creates File node and UPLOADED relationship)
-- File download (creates DOWNLOADED relationship)
-- File edit (creates EDITED relationship)
-- Batch file upload (creates UPLOADED_WITH relationships)
-
-**Run tests using Docker Compose:**
-```bash
-# Run tests locally (uses docker-compose.override.yml)
-docker compose --profile test up --build tests
-
-# Run tests and exit
-docker compose --profile test up --build --exit-code-from tests tests
-
-# Run tests in CI mode (uses docker-compose.ci.yml)
-docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile test up --build --exit-code-from tests tests
-
-# Clean up after tests
-docker compose --profile test down
-```
-
-**Run tests locally:**
-```bash
-# Install test dependencies
-cd tests
-uv sync
-
-# Run tests
-uv run pytest -v
-
-# Run specific test
-uv run pytest test_integration.py::test_person_creation_in_database -v
-
-# Go back to root
-cd ..
-```
-
-**Test Service Details:**
-- Uses pytest for test framework
-- Makes HTTP requests to fileshare API
-- Queries Neo4j directly to verify database state
-- Automatically cleans up test data after each test
-- Runs in isolated Docker container with access to all backend services
-
-## Service Details
-
-### Frontend (Port 80 via Traefik)
-A Vue 3 single-page application providing a user-friendly interface for file management.
-
-**Features:**
-- Simple name-based authentication (no actual auth, creates/fetches person from database)
-- File upload with visual feedback
-- File download via dropdown selection
-- File list display with size formatting
-- File deletion with confirmation
-- Responsive design with modern UI
-
-**Tech Stack:**
-- Vue 3 Composition API with `<script setup>`
-- Vite for development and build
-- nginx for production serving
-- API requests proxied to fileshare service
-
-**User Flow:**
-1. Enter name (and optionally email) on login screen
-2. System checks if person exists, creates if not
-3. Main interface shows:
-   - User info with logout button
-   - Upload section with file picker
-   - Download section with dropdown of user's files
-   - List of all user's files with delete buttons
+## Service APIs
 
 ### Echo Service
-- `POST /echo`: Returns the JSON body sent to it
-- `GET /health`: Health check endpoint
-
-### Database Service (Port 8081)
-Fully implemented Neo4j graph database API with the following endpoints:
-
-**Node Operations:**
-- `POST /nodes`: Create node with labels and properties
-- `GET /nodes/<node_id>`: Retrieve node by ID
-- `PUT /nodes/<node_id>`: Update node properties
-- `DELETE /nodes/<node_id>`: Delete node
-- `GET /nodes/label/<label>`: Get nodes by label
-
-**Relationship Operations:**
-- `POST /relationships`: Create relationship between nodes
-- `GET /relationships/<relationship_id>`: Get relationship by ID
-- `PUT /relationships/<relationship_id>`: Update relationship properties
-- `DELETE /relationships/<relationship_id>`: Delete relationship
-- `GET /relationships/type/<rel_type>`: Get relationships by type
-- `GET /nodes/<node_id>/relationships`: Get relationships for a node (with direction/type filters)
-
-**Query Operations:**
-- `POST /query/cypher`: Execute Cypher query
-- `POST /query/path`: Find path between nodes
-
-**Utility:**
+Simple demonstration service:
+- `POST /echo`: Returns JSON body
 - `GET /health`: Health check
-- `GET /stats`: Database statistics
 
-### File Share Service (Port 8082)
-Demonstrates persistent volumes and service-to-service communication. Stores files in a named volume and tracks all file interactions in the graph database.
+### Database Service (Internal Only)
+Neo4j graph database API:
+- Node CRUD: `POST /nodes`, `GET /nodes/<id>`, `PUT /nodes/<id>`, `DELETE /nodes/<id>`
+- Relationship CRUD: `POST /relationships`, `GET /relationships/<id>`, etc.
+- Queries: `POST /query/cypher`, `POST /query/path`
+- Utility: `GET /health`, `GET /stats`
+
+### Fileshare Service
+File storage with graph tracking (demonstrates volumes + service-to-service communication):
 
 **Graph Schema:**
-- Nodes: `Person` (name, email), `File` (filename, size, content_type, deleted)
-- Relationships: `UPLOADED`, `DOWNLOADED`, `EDITED` (Person -> File), `UPLOADED_WITH` (File <-> File)
+- Nodes: `Person`, `File`
+- Relationships: `UPLOADED`, `DOWNLOADED`, `EDITED`, `UPLOADED_WITH`
 
-**Person Operations:**
-- `POST /persons`: Create person (name must be unique)
-- `GET /persons/<person_name>`: Get person by name
-- `GET /persons`: List all persons
-- `GET /persons/<person_name>/files`: Get files uploaded by person
+**Key Endpoints:**
+- Persons: `POST /persons`, `GET /persons/<name>`, `GET /persons/<name>/files`
+- Files: `POST /files/upload`, `POST /files/upload/batch`, `GET /files/<person>/<filename>/download`
+- Queries: `GET /files/<person>/<filename>/history`, `GET /files/<person>/<filename>/batch-related`
 
-**File Operations:**
-- `POST /files/upload`: Upload single file (requires person name, filename must be unique per person)
-- `POST /files/upload/batch`: Upload multiple files, creates UPLOADED_WITH relationships
-- `GET /files`: List all files
-- `GET /files/<person>/<filename>/download`: Download file and track download
-- `PUT /files/<person>/<filename>`: Edit/replace file content
-- `DELETE /files/<person>/<filename>`: Soft delete (marks as deleted, removes physical file)
+### Frontend
+Vue 3 SPA with:
+- Name-based login (creates/fetches person from database)
+- File upload/download interface
+- File list with delete functionality
 
-**Query Operations:**
-- `GET /files/<person>/<filename>/history`: Get all interactions with file
-- `GET /files/<person>/<filename>/batch-related`: Get files uploaded in same batch
+## Testing the Demo
 
-**Health:**
-- `GET /health`: Health check
-
-## Testing Services
-
-### Frontend Web UI
-The easiest way to test the application is through the web interface:
-
+### Web UI (Easiest)
 ```bash
-# Start all services
 docker compose up --build
-
-# Access the frontend in your browser
 open http://localhost
-
-# Or on specific port if configured differently
-# open http://localhost:4200
 ```
 
-The web UI provides:
-- Name-based login (no password required)
-- Visual file upload with drag-and-drop
-- Dropdown list of your files for download
-- File management (view, download, delete)
-
 ### API Testing
-All backend services are accessed through Traefik on port 80 with path-based routing:
-
 ```bash
-# Test echo service (accessible via Traefik)
+# Echo service
 curl -X POST http://localhost/echo/echo \
   -H "Content-Type: application/json" \
   -d '{"message": "hello"}'
 
-# Echo health check
-curl http://localhost/echo/health
-
-# Database service (internal only - not accessible via Traefik)
-# Returns 404: curl http://localhost/database/health
-
-# Test fileshare service (accessible via Traefik)
-# Create a person
+# Fileshare: Create person
 curl -X POST http://localhost/fileshare/persons \
   -H "Content-Type: application/json" \
   -d '{"name": "Alice", "email": "alice@example.com"}'
 
-# Try to create duplicate person (will fail with 409)
-curl -X POST http://localhost/fileshare/persons \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Alice", "email": "different@example.com"}'
-
-# Upload a file
+# Upload file
 echo "Hello World" > test.txt
 curl -X POST http://localhost/fileshare/files/upload \
   -F "file=@test.txt" \
   -F "person=Alice"
 
-# Try to upload duplicate file (will fail with 409)
-curl -X POST http://localhost/fileshare/files/upload \
-  -F "file=@test.txt" \
-  -F "person=Alice"
-
-# Upload batch of files
+# Upload batch (creates UPLOADED_WITH relationships)
 echo "File 1" > file1.txt
 echo "File 2" > file2.txt
 curl -X POST http://localhost/fileshare/files/upload/batch \
@@ -472,84 +185,68 @@ curl -X POST http://localhost/fileshare/files/upload/batch \
   -F "files=@file2.txt" \
   -F "person=Alice"
 
-# Download a file
+# Download file (tracks DOWNLOADED relationship)
 curl http://localhost/fileshare/files/Alice/test.txt/download -o downloaded.txt
-
-# Edit a file
-echo "Updated content" > updated.txt
-curl -X PUT http://localhost/fileshare/files/Alice/test.txt \
-  -F "file=@updated.txt"
 
 # Get file history
 curl http://localhost/fileshare/files/Alice/test.txt/history
 
-# Get files uploaded in same batch
-curl http://localhost/fileshare/files/Alice/file1.txt/batch-related
-
-# Get files uploaded by person
-curl http://localhost/fileshare/persons/Alice/files
-
-# Delete a file
-curl -X DELETE http://localhost/fileshare/files/Alice/test.txt
-
-# Try operations with non-existent person (will fail with 404)
-curl -X POST http://localhost/fileshare/files/upload \
-  -F "file=@test.txt" \
-  -F "person=Bob"
-
-# Access Traefik dashboard
+# View Traefik dashboard
 open http://localhost:8080
+```
+
+### Integration Tests
+Tests verify fileshare correctly updates Neo4j:
+```bash
+docker compose --profile test up --build --exit-code-from tests tests
 ```
 
 ## Troubleshooting
 
-### Services return 404
-- **Check Traefik dashboard**: Visit http://localhost:8080 to see registered routes and service health
-- **Verify containers are running**: `docker compose ps` should show all services as "Up"
-- **Check Traefik logs**: `docker compose logs traefik` for routing errors
-- **Verify service labels**: Ensure Traefik labels are correctly set in docker-compose.yml
+### 404 Errors
+- Check Traefik dashboard: http://localhost:8080
+- Verify containers: `docker compose ps`
+- Check logs: `docker compose logs traefik`
 
-### Gateway Timeout (504) errors
-- Services may still be starting up - wait 10-20 seconds
-- Check if backend service is healthy: `docker compose ps`
-- Check service logs: `docker compose logs -f <service_name>`
-- Verify service is listening on the correct port (5000)
+### 504 Gateway Timeout
+- Services starting up (wait 10-20s for health checks)
+- Check status: `docker compose ps`
+- View logs: `docker compose logs -f <service>`
 
-### Port conflicts
-If port 80 or 8080 is already in use:
+### Port Conflicts
 ```bash
-# Check what's using the ports
 lsof -i :80
 lsof -i :8080
-
-# Stop conflicting services or change ports in docker-compose.yml
+# Modify ports in .env or docker-compose.yml
 ```
 
-### Changes not reflected
-- **Code changes**: Should hot-reload automatically via bind mounts
-- **Docker Compose changes**: Restart services with `docker compose up -d`
-- **Traefik routing changes**: Traefik picks up label changes automatically
+### Code Changes Not Reflected
+- Hot-reload requires bind mounts (auto-enabled in dev mode)
+- Restart if needed: `docker compose restart <service>`
 
-### Database connection issues
-- Ensure Neo4j is fully started before other services
-- Check Neo4j logs: `docker compose logs neo4j`
-- Verify database service can reach Neo4j: `docker compose exec database curl http://neo4j:7474`
+## Project Structure
 
-## Key Implementation Notes
+```
+.
+├── services/
+│   ├── echo/            # Simple echo service
+│   ├── database/        # Neo4j API (modular: routes/, db.py, validation.py)
+│   └── fileshare/       # File storage (modular: routes/, db_client.py, config.py)
+├── frontend/            # Vue 3 + Vite SPA
+├── tests/               # Integration tests (pytest)
+├── docker-compose.yml           # Base configuration
+├── docker-compose.override.yml  # Dev overrides (hot-reload)
+├── docker-compose.ci.yml        # CI configuration
+├── default.env          # Default environment variables
+└── example.env          # Environment template
+```
 
-- **Traefik reverse proxy**: Path-based routing with automatic service discovery via Docker labels
-  - Public services (echo, fileshare) accessible via `/echo/*` and `/fileshare/*`
-  - Internal services (database, neo4j) not exposed externally
-  - Dashboard available at port 8080 for monitoring and debugging
-- **Health checks & smart dependencies**: All services have health checks, dependencies use `condition: service_healthy` to eliminate startup race conditions
-- **Network isolation**: Three-layer network architecture (frontend, backend, database) provides defense-in-depth security
-- **Extension fields**: YAML anchors reduce duplication for common Flask service configuration and profile definitions
-- **Database service**: Full Neo4j integration with proper validation and error handling
-- **File share service**: Demonstrates both persistent volumes (for uploads) and service-to-service HTTP communication (calls database service)
-- **Security**: Fileshare service uses parameterized queries to prevent Cypher injection, filename sanitization to prevent path traversal, and file type/size validation; network isolation limits blast radius
-- **Restart policies**: All services use `restart: unless-stopped` for production-like resilience
-- All services use Flask's development mode with debug=True
-- Type hints are used throughout (Python 3.11+ style with `|` union syntax)
-- Volume mounts enable code changes without rebuilding containers
-- Modular architecture: database and fileshare services use separate route modules for better organization
-- Soft delete pattern: fileshare marks files as deleted in database but removes physical files
+## Key Implementation Details
+
+- **Traefik**: Path-based routing with automatic service discovery
+- **Health checks**: `condition: service_healthy` eliminates race conditions
+- **Network isolation**: Three layers (frontend/backend/database)
+- **Volumes**: Bind mounts (dev hot-reload) + named volumes (persistent data)
+- **Security**: Parameterized queries, input validation, network isolation
+- **Dependencies**: uv (Python), npm (frontend)
+- **Restart policy**: `unless-stopped` for resilience
