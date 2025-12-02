@@ -12,6 +12,25 @@
 
     <h1>File Manager</h1>
 
+    <div class="tabs" role="tablist">
+      <button
+        role="tab"
+        :class="['tab', { active: activeTab === 'files' }]"
+        :aria-selected="activeTab === 'files'"
+        @click="activeTab = 'files'"
+      >
+        Files
+      </button>
+      <button
+        role="tab"
+        :class="['tab', { active: activeTab === 'calculator' }]"
+        :aria-selected="activeTab === 'calculator'"
+        @click="activeTab = 'calculator'"
+      >
+        Calculator
+      </button>
+    </div>
+
     <div
       v-if="message.text"
       :class="['message', message.type]"
@@ -21,6 +40,7 @@
       {{ message.text }}
     </div>
 
+    <div v-show="activeTab === 'files'" class="tab-content">
     <div class="actions">
       <section class="action-card" aria-labelledby="upload-heading">
         <h3 id="upload-heading">Upload File</h3>
@@ -161,6 +181,11 @@
         </div>
       </div>
     </div>
+    </div>
+
+    <div v-show="activeTab === 'calculator'" class="tab-content">
+      <Calculator />
+    </div>
   </div>
 </template>
 
@@ -169,6 +194,7 @@ import { ref, computed, onMounted } from 'vue'
 import { API_BASE, extractFileData, handleApiError, apiRequest } from '../utils/api.js'
 import { formatFileSize } from '../utils/format.js'
 import { isEditableFile, triggerDownload } from '../utils/file.js'
+import Calculator from './Calculator.vue'
 
 const props = defineProps({
   user: {
@@ -179,6 +205,7 @@ const props = defineProps({
 
 const emit = defineEmits(['logout'])
 
+const activeTab = ref('calculator')
 const files = ref([])
 const loadingFiles = ref(false)
 const selectedFile = ref(null)
@@ -439,3 +466,49 @@ onMounted(() => {
   loadFiles()
 })
 </script>
+
+<style scoped>
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.tab {
+  padding: 0.75rem 1.5rem;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.2s ease;
+  margin-bottom: -2px;
+}
+
+.tab:hover {
+  color: #333;
+  background-color: #f5f5f5;
+}
+
+.tab.active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  font-weight: 600;
+}
+
+.tab-content {
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+</style>

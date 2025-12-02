@@ -77,10 +77,10 @@ The easiest way to explore the application:
 All services are accessible through Traefik at `http://localhost`:
 
 ```bash
-# Echo service - simple demo endpoint
-curl -X POST http://localhost/echo/echo \
+# Calculator service - simple demo endpoint
+curl -X POST http://localhost/calc/calculate \
   -H "Content-Type: application/json" \
-  -d '{"message": "hello world"}'
+  -d '{"expression": "2 + 2"}'
 
 # Create a user
 curl -X POST http://localhost/fileshare/persons \
@@ -149,7 +149,7 @@ docker compose --env-file .env --profile dev up
 ```
 .
 ├── services/
-│   ├── echo/              # Simple echo service (demo endpoint)
+│   ├── calc/              # Simple calculator service (demo endpoint)
 │   ├── database/          # Neo4j API with full CRUD operations
 │   └── fileshare/         # File storage with graph tracking
 ├── frontend/              # Vue 3 + Vite SPA
@@ -166,7 +166,7 @@ docker compose --env-file .env --profile dev up
                            |
         +------------------+------------------+
         |                  |                  |
-    Frontend           Echo API          Fileshare API
+    Frontend           Calc API          Fileshare API
      (Vue 3)          (Flask)             (Flask)
         |                                     |
         |                              Database API
@@ -176,7 +176,7 @@ docker compose --env-file .env --profile dev up
 ```
 
 **Network Isolation:**
-- Frontend network: Public-facing services (traefik, echo, fileshare, frontend)
+- Frontend network: Public-facing services (traefik, calc, fileshare, frontend)
 - Backend network: Internal APIs (fileshare, database)
 - Database network: Most isolated (database, neo4j only)
 
@@ -191,7 +191,7 @@ This means:
 
 All external traffic goes through Traefik on port 80:
 - `/` → Frontend (Vue SPA)
-- `/echo/*` → Echo service
+- `/calc/*` → Calculator service
 - `/fileshare/*` → Fileshare service
 - Database service: Internal only (not exposed)
 

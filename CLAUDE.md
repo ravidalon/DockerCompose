@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 Docker Compose microservices demo with three Python Flask backends and a Vue.js frontend:
-- **echo**: Simple echo service
+- **calc**: Simple calculator service
 - **database**: Neo4j graph database API (nodes, relationships, queries)
 - **fileshare**: File storage with graph-based tracking
 - **frontend**: Vue 3 + Vite SPA for file management
@@ -38,14 +38,14 @@ open http://localhost:8080
 ```
 Traefik (public entry point)
 ├── / → frontend (Vue SPA)
-├── /echo/* → echo service
+├── /calc/* → calc service
 └── /fileshare/* → fileshare service
     └── (internal) → database service
         └── (internal) → neo4j
 ```
 
 Three-layer network security:
-- **Frontend network**: Public-facing (traefik, echo, fileshare, frontend)
+- **Frontend network**: Public-facing (traefik, calc, fileshare, frontend)
 - **Backend network**: Internal APIs (fileshare, database)
 - **Database network**: Most isolated (database, neo4j)
 
@@ -121,9 +121,9 @@ npm run dev  # http://localhost:5173
 
 ## Service APIs
 
-### Echo Service
+### Calculator Service
 Simple demonstration service:
-- `POST /echo`: Returns JSON body
+- `POST /calculate`: Evaluates mathematical expressions (supports +, -, *, /, **, sqrt, sin, cos, tan, pi, e, etc.)
 - `GET /health`: Health check
 
 ### Database Service (Internal Only)
@@ -161,10 +161,10 @@ open http://localhost
 
 ### API Testing
 ```bash
-# Echo service
-curl -X POST http://localhost/echo/echo \
+# Calculator service
+curl -X POST http://localhost/calc/calculate \
   -H "Content-Type: application/json" \
-  -d '{"message": "hello"}'
+  -d '{"expression": "2 + 2"}'
 
 # Fileshare: Create person
 curl -X POST http://localhost/fileshare/persons \
@@ -229,7 +229,7 @@ lsof -i :8080
 ```
 .
 ├── services/
-│   ├── echo/            # Simple echo service
+│   ├── calc/            # Simple calculator service
 │   ├── database/        # Neo4j API (modular: routes/, db.py, validation.py)
 │   └── fileshare/       # File storage (modular: routes/, db_client.py, config.py)
 ├── frontend/            # Vue 3 + Vite SPA
