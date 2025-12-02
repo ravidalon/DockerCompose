@@ -8,9 +8,9 @@
 # - Debug logging and access logs
 
 services:
-  echo:
+  calc:
     volumes:
-      - ./services/echo/echo:/app/echo
+      - ./services/calc/calc:/app/calc
     environment:
       - FLASK_DEBUG=1
 

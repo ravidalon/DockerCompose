@@ -9,7 +9,7 @@
 # - Faster health checks
 
 services:
-  echo:
+  calc:
     environment:
       - FLASK_ENV=production
 

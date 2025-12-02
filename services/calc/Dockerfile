@@ -15,10 +15,10 @@ COPY pyproject.toml .
 RUN uv pip install --system -r pyproject.toml
 
 # Copy application code
-COPY echo/ ./echo/
+COPY calc/ ./calc/
 
 # Expose port
 EXPOSE 5000
 
 # Run the application
-CMD ["python", "-m", "echo.app"]
+CMD ["python", "-m", "calc.app"]

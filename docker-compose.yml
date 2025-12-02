@@ -41,19 +41,19 @@ services:
     networks:
       - frontend_network
 
-  echo:
+  calc:
     <<: [*flask-service, *common-profiles]
-    build: ./services/echo
+    build: ./services/calc
     depends_on:
       traefik:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.echo.rule=PathPrefix(`/echo`)"
-      - "traefik.http.routers.echo.entrypoints=web"
-      - "traefik.http.routers.echo.middlewares=echo-stripprefix"
-      - "traefik.http.middlewares.echo-stripprefix.stripprefix.prefixes=/echo"
-      - "traefik.http.services.echo.loadbalancer.server.port=5000"
+      - "traefik.http.routers.calc.rule=PathPrefix(`/calc`)"
+      - "traefik.http.routers.calc.entrypoints=web"
+      - "traefik.http.routers.calc.middlewares=calc-stripprefix"
+      - "traefik.http.middlewares.calc-stripprefix.stripprefix.prefixes=/calc"
+      - "traefik.http.services.calc.loadbalancer.server.port=5000"
     networks:
       - frontend_network
 
