@@ -94,6 +94,7 @@ services:
       - "traefik.http.routers.fileshare.middlewares=fileshare-stripprefix"
       - "traefik.http.middlewares.fileshare-stripprefix.stripprefix.prefixes=/fileshare"
       - "traefik.http.services.fileshare.loadbalancer.server.port=5000"
+      - "traefik.docker.network=dockercompose_frontend"
     networks:
       - frontend_network
       - backend_network
