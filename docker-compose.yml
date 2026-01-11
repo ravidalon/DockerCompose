@@ -18,7 +18,7 @@ x-common-profiles: &common-profiles
 
 services:
   traefik:
-    image: traefik:v3.0
+    image: traefik:v3.6
     command:
       - "--api.insecure=true"  # Insecure API for development only
       - "--providers.docker=true"
@@ -126,7 +126,7 @@ services:
 
   neo4j:
     <<: *common-profiles
-    image: neo4j:5.14-community
+    image: neo4j:5.26-community
     environment:
       - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
     volumes:
